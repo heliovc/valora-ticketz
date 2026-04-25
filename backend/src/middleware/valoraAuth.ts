@@ -82,7 +82,11 @@ async function provisionCompanyAndUser(
       status: true,
       externalId: tenantId,
       dueDate: farFuture.toISOString(),
-      recurrence: "annual"
+      recurrence: "annual",
+      // Valora controls plan/limits at its own layer — attach the seeded
+      // default plan (id=1) so native services that read `company.plan.*`
+      // (CreateWhatsAppService, etc.) never NPE on null.
+      planId: 1
     } as any);
     logger.info(
       { tenantId, companyId: company.id },
