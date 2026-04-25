@@ -54,6 +54,7 @@ import UserSocketSession from "../models/UserSocketSession";
 import { GetCompanySetting } from "../helpers/CheckSettings";
 import { DecoupledDriverServices } from "../services/DecoupledDriverServices/DecoupledDriverServices";
 import { corsOrigin } from "../helpers/corsOrigin";
+import { tryAuthenticateValora } from "../middleware/valoraAuth";
 
 const decoupledDriverServices = DecoupledDriverServices.getInstance();
 
@@ -109,34 +110,45 @@ export const initIO = (httpServer: Server): SocketIO => {
   io.on("connection", async socket => {
     logger.info("Client Connected");
     const { token } = socket.handshake.query;
-    let tokenData = null;
-    try {
-      tokenData = verify(token as string, authConfig.secret);
-      logger.debug(tokenData, "io-onConnection: tokenData");
-    } catch (error) {
-      logger.debug(`Error decoding token: ${error?.message}`);
-      socket.disconnect();
-      return io;
-    }
+    const tokenStr = token as string;
     const counters = new CounterManager();
-
     let user: User = null;
-    const userId = tokenData.id;
 
-    if (userId && userId !== "undefined" && userId !== "null") {
-      user = await User.findByPk(userId, { include: [Queue] });
-      if (user) {
-        await user.save();
-      } else {
-        logger.info(`onConnect: User ${userId} not found`);
+    // 1) Try Valora SSO first (RS256 + JWKS). If valid, we already have the
+    //    user/company JIT-provisioned. Reload with Queue include for socket
+    //    rooms below.
+    const valoraResult = await tryAuthenticateValora(tokenStr);
+    if (valoraResult) {
+      user = await User.findByPk(valoraResult.user.id, { include: [Queue] });
+    } else {
+      // 2) Fall back to native Ticketz HMAC token.
+      let tokenData = null;
+      try {
+        tokenData = verify(tokenStr, authConfig.secret);
+        logger.debug(tokenData, "io-onConnection: tokenData");
+      } catch (error) {
+        logger.debug(`Error decoding token: ${error?.message}`);
         socket.disconnect();
         return io;
       }
-    } else {
-      logger.info("onConnect: Missing userId");
+
+      const userId = tokenData.id;
+      if (userId && userId !== "undefined" && userId !== "null") {
+        user = await User.findByPk(userId, { include: [Queue] });
+      } else {
+        logger.info("onConnect: Missing userId");
+        socket.disconnect();
+        return io;
+      }
+    }
+
+    if (!user) {
+      logger.info("onConnect: User not found");
       socket.disconnect();
       return io;
     }
+    await user.save();
+    const userId = user.id;
 
     UserSocketSession.create({
       id: socket.id,

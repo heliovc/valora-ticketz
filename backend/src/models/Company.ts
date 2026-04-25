@@ -64,6 +64,16 @@ class Company extends Model<Company> {
   @Column
   language: string;
 
+  // Valora Smart integration: identifier of the contract holder on the Valora
+  // side (Users.id). Nullable so non-SSO companies (native Ticketz signup)
+  // keep working as fallback. Unique when present.
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+    unique: true
+  })
+  externalId: string | null;
+
   @CreatedAt
   createdAt: Date;
 

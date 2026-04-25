@@ -66,6 +66,15 @@ class User extends Model<User> {
   @BelongsTo(() => Company)
   company: Company;
 
+  // Valora Smart integration: identifier of this agent on the Valora side
+  // (Users.id). Nullable so native Ticketz signup keeps working as fallback.
+  // (companyId, externalId) is unique — see migration 20260424200000.
+  @Column({
+    type: DataType.STRING,
+    allowNull: true
+  })
+  externalId: string | null;
+
   @HasMany(() => Ticket)
   tickets: Ticket[];
 

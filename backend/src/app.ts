@@ -14,6 +14,7 @@ import routes from "./routes";
 import { logger } from "./utils/logger";
 import { messageQueue, sendScheduledMessages } from "./queues";
 import { corsOrigin } from "./helpers/corsOrigin";
+import valoraAuth from "./middleware/valoraAuth";
 
 class SystemError extends Error {
   code?: string;
@@ -68,6 +69,11 @@ app.use((req, _res, next) => {
   );
   next();
 });
+
+// Valora SSO middleware: validates RS256 tokens from Valora via JWKS and
+// JIT-provisions Company/User. If the token isn't Valora-signed, this is a
+// no-op and the native isAuth (per-route) takes over.
+app.use(valoraAuth);
 
 app.use(routes);
 
