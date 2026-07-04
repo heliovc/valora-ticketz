@@ -21,6 +21,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@flystorage/file-storage": "^1.1.0",
     "@flystorage/local-fs": "^1.1.0",

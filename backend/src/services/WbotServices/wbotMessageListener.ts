@@ -61,6 +61,11 @@ import { getPublicPath } from "../../helpers/GetPublicPath";
 import { Session } from "../../libs/wbot";
 import { checkCompanyCompliant } from "../../helpers/CheckCompanyCompliant";
 import { transcriber } from "../../helpers/transcriber";
+import {
+  generateBotReply,
+  isAiBotAvailable,
+  BotTurn
+} from "../../helpers/aiBot";
 import { parseToMilliseconds } from "../../helpers/parseToMilliseconds";
 import { randomValue } from "../../helpers/randomValue";
 import { getJidOf } from "./getJidOf";
@@ -1523,6 +1528,72 @@ const handleChartbot = async (
   }
 };
 
+const AI_BOT_HISTORY_LIMIT = 10;
+
+/**
+ * Bot de IA (Valora): gera e envia a resposta automática quando habilitado
+ * para a Company. Retorna `true` se assumiu a conversa (enviou resposta),
+ * `false` para seguir o fluxo padrão (saudação/fila/chatbot ou atendimento
+ * humano). Config por lojista em Settings: aiBotEnabled/aiBotPersona/
+ * aiBotKnowledge. Handoff e erros retornam `false` (deixa para humano).
+ */
+const handleAiBotReply = async (
+  ticket: Ticket,
+  contact: Contact,
+  bodyMessage: string,
+  wbot: Session
+): Promise<boolean> => {
+  if (!isAiBotAvailable()) return false;
+
+  const enabled =
+    (await GetCompanySetting(ticket.companyId, "aiBotEnabled", "")) ===
+    "enabled";
+  if (!enabled) return false;
+
+  const persona = await GetCompanySetting(ticket.companyId, "aiBotPersona", "");
+  const knowledge = await GetCompanySetting(
+    ticket.companyId,
+    "aiBotKnowledge",
+    ""
+  );
+
+  // Histórico recente da conversa (cronológico), só texto.
+  const recent = await Message.findAll({
+    where: { ticketId: ticket.id, isDeleted: false },
+    order: [["createdAt", "DESC"]],
+    limit: AI_BOT_HISTORY_LIMIT + 1
+  });
+
+  const chronological = recent.reverse();
+  // A mensagem atual costuma já estar persistida como último item; remove-a
+  // para não duplicar (ela é passada como userMessage).
+  const last = chronological[chronological.length - 1];
+  if (last && !last.fromMe && (last.body || "").trim() === bodyMessage.trim()) {
+    chronological.pop();
+  }
+
+  const history: BotTurn[] = chronological
+    .filter(m => m.body && m.body.trim())
+    .map(m => ({
+      role: m.fromMe ? "assistant" : "user",
+      text: m.body.trim()
+    }));
+
+  const reply = await generateBotReply({
+    persona,
+    knowledge,
+    history,
+    userMessage: bodyMessage,
+    contactName: contact.name
+  });
+
+  // Handoff / erro / chave ausente: deixa o ticket para atendimento humano.
+  if (!reply) return false;
+
+  await SendWhatsAppMessage({ body: reply, ticket });
+  return true;
+};
+
 const handleMessage = async (
   msg: WAMessage,
   wbot: Session,
@@ -1901,6 +1972,25 @@ const handleMessage = async (
     const dontReadTheFirstQuestion = ticket.queue === null;
 
     await ticket.reload();
+
+    // Bot de IA (Valora): assume a conversa quando habilitado, com o contato
+    // sem atendente humano atribuído, fora de grupo e com o bot não desativado
+    // para este contato. Em handoff/erro segue o fluxo padrão (humano/fila).
+    if (
+      !msg.key.fromMe &&
+      !isGroup &&
+      !ticket.userId &&
+      !contact.disableBot &&
+      bodyMessage
+    ) {
+      const handledByAiBot = await handleAiBotReply(
+        ticket,
+        contact,
+        bodyMessage,
+        wbot
+      );
+      if (handledByAiBot) return;
+    }
 
     if (
       justCreated &&
