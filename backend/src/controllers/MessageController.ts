@@ -13,6 +13,8 @@ import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessage";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
+import CreateMessageService from "../services/MessageServices/CreateMessageService";
+import { randomUUID } from "crypto";
 import CheckContactNumber from "../services/WbotServices/CheckNumber";
 import EditWhatsAppMessage from "../services/WbotServices/EditWhatsAppMessage";
 
@@ -104,6 +106,21 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     }
   } else if (channel === "whatsapp") {
     await SendWhatsAppMessage({ body, ticket, userId, quotedMsg });
+  } else if (channel === "webchat") {
+    // Chat do Site: não há baileys — apenas persiste a resposta do atendente
+    // (o widget do visitante faz poll dela). Mesmo caminho do bot.
+    await CreateMessageService({
+      messageData: {
+        id: randomUUID(),
+        ticketId: ticket.id,
+        contactId: ticket.contactId,
+        body,
+        fromMe: true,
+        read: true,
+        channel: "webchat"
+      },
+      companyId
+    });
   }
 
   return res.send();
