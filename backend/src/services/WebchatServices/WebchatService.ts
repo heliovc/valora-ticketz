@@ -42,6 +42,33 @@ export async function resolveCompanyByKey(widgetKey: string): Promise<number | n
   return setting ? setting.companyId : null;
 }
 
+/**
+ * F4 — allowlist de domínio: valida a origem (site de terceiro) contra a lista
+ * `webchatAllowedDomains` da empresa (CSV). Vazia = permite qualquer origem
+ * (compat com widgets já publicados). Ativa = só as origens listadas — evita
+ * que copiem a widget-key pública e abusem/consumam a chave Anthropic da Valora.
+ */
+export async function isOriginAllowed(companyId: number, origin?: string): Promise<boolean> {
+  const raw = await GetCompanySetting(companyId, "webchatAllowedDomains", "");
+  const list = (raw || "")
+    .split(",")
+    .map(d => d.trim().toLowerCase())
+    .filter(Boolean);
+  if (list.length === 0) return true;
+  if (!origin) return false;
+  let host = "";
+  try {
+    host = new URL(origin).host.toLowerCase();
+  } catch {
+    host = origin.toLowerCase();
+  }
+  host = host.replace(/^www\./, "");
+  return list.some(d => {
+    const dom = d.replace(/^www\./, "");
+    return host === dom || host.endsWith("." + dom);
+  });
+}
+
 /** Lê a configuração pública do widget para a empresa. */
 export async function getWidgetConfig(companyId: number): Promise<WidgetConfig> {
   const enabled = (await GetCompanySetting(companyId, "webchatEnabled", "disabled")) === "enabled";

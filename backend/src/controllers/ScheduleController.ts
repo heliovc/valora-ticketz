@@ -107,7 +107,8 @@ export const remove = async (
   await DeleteService(scheduleId, companyId);
 
   const io = getIO();
-  io.emit("schedule", {
+  // Escopar ao room da company (antes era broadcast global).
+  io.to(`company-${companyId}-mainchannel`).emit("schedule", {
     action: "delete",
     scheduleId
   });

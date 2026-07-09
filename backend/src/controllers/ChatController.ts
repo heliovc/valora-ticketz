@@ -50,7 +50,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const io = getIO();
 
   record.users.forEach(user => {
-    io.emit(`company-${companyId}-chat-user-${user.userId}`, {
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-user-${user.userId}`, {
       action: "create",
       record
     });
@@ -75,7 +75,7 @@ export const update = async (
   const io = getIO();
 
   record.users.forEach(user => {
-    io.emit(`company-${companyId}-chat-user-${user.userId}`, {
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-user-${user.userId}`, {
       action: "update",
       record
     });
@@ -102,7 +102,7 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io.emit(`company-${companyId}-chat`, {
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {
     action: "delete",
     id
   });

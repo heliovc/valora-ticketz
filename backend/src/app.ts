@@ -40,7 +40,19 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(Sentry.Handlers.requestHandler());
 app.get("/public/*", (req, res) => {
-  const filePath = path.join(uploadConfig.directory, req.params[0]);
+  const publicDir = path.resolve(uploadConfig.directory);
+  // Path traversal: resolve o caminho pedido e exige que fique DENTRO de publicDir
+  // (bloqueia `..%2f..%2f...` que escaparia para ler arquivos arbitrários).
+  let requested: string;
+  try {
+    requested = path.resolve(publicDir, decodeURIComponent(req.params[0]));
+  } catch {
+    return res.status(400).end();
+  }
+  if (requested !== publicDir && !requested.startsWith(publicDir + path.sep)) {
+    return res.status(403).end();
+  }
+  const filePath = requested;
 
   if (filePath.endsWith(".aac")) {
     res.setHeader("Content-Type", "audio/aac");

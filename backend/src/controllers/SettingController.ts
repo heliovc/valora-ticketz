@@ -41,7 +41,9 @@ export const update = async (
   });
 
   const io = getIO();
-  io.emit(`company-${companyId}-settings`, {
+  // Escopar ao room da própria company — o Setting pode conter segredos (ex.:
+  // apiToken). Broadcast global vazaria para sockets de outros tenants.
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-settings`, {
     action: "update",
     setting
   });

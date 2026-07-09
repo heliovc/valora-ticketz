@@ -486,10 +486,20 @@ export const initWASocket = async (
                   qrcode: ""
                 });
                 await DeleteBaileysService(whatsappUpdate.id);
-                io.emit("whatsappSession", {
-                  action: "update",
-                  session: whatsappUpdate
-                });
+                // Escopar ao room da company + NÃO vazar o `token` da conexão
+                // (broadcast global com o objeto Whatsapp inteiro expunha o token).
+                io.to(`company-${whatsappUpdate.companyId}-mainchannel`).emit(
+                  `company-${whatsappUpdate.companyId}-whatsappSession`,
+                  {
+                    action: "update",
+                    session: {
+                      id: whatsappUpdate.id,
+                      name: whatsappUpdate.name,
+                      status: whatsappUpdate.status,
+                      qrcode: whatsappUpdate.qrcode
+                    }
+                  }
+                );
                 wsocket.ev.removeAllListeners("connection.update");
                 wsocket.ws.close();
                 wsocket = null;

@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import isAuth from "../middleware/isAuth";
-import isSuper from "../middleware/isAdmin";
+import isSuper from "../middleware/isSuper";
 import * as TicketzOSSController from "../controllers/TicketzOSSController";
 
 const ticketzOSSRoutes = Router();
