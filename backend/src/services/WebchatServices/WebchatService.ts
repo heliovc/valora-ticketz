@@ -50,9 +50,19 @@ export async function resolveCompanyByKey(widgetKey: string): Promise<number | n
  */
 export async function isOriginAllowed(companyId: number, origin?: string): Promise<boolean> {
   const raw = await GetCompanySetting(companyId, "webchatAllowedDomains", "");
+  // Normaliza cada entrada pra host puro: aceita "https://site.com/", "site.com/x"
+  // ou "site.com" — usuarios colam URL completa e a comparacao e por host.
   const list = (raw || "")
     .split(",")
     .map(d => d.trim().toLowerCase())
+    .filter(Boolean)
+    .map(d => {
+      try {
+        return new URL(d.includes("://") ? d : `https://${d}`).host;
+      } catch {
+        return d.replace(/\/.*$/, "");
+      }
+    })
     .filter(Boolean);
   if (list.length === 0) return true;
   if (!origin) return false;
