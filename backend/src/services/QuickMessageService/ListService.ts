@@ -5,7 +5,8 @@ interface Request {
   searchParam?: string;
   pageNumber?: string;
   companyId: number | string;
-  userId: number | string;
+  /** Opcional: sem ele a lista e da EMPRESA, compartilhada pela equipe. */
+  userId?: number | string;
 }
 
 interface Response {
@@ -20,7 +21,10 @@ const ListService = async ({
   companyId,
   userId
 }: Request): Promise<Response> => {
-  let whereCondition = {
+  // A resposta rapida e um ativo da empresa, nao de uma pessoa: o atendente
+  // novo precisa das mesmas respostas do dono no primeiro dia. Filtrar por
+  // usuario so quando quem chama pedir explicitamente.
+  let whereCondition: Record<string, unknown> = {
     [Op.or]: [
       {
         shortcode: Sequelize.where(
@@ -32,11 +36,12 @@ const ListService = async ({
     ],
     companyId: {
       [Op.eq]: companyId
-    },
-    userId: {
-      [Op.eq]: userId
     }
   };
+
+  if (userId !== undefined && userId !== null && `${userId}` !== "") {
+    whereCondition = { ...whereCondition, userId: { [Op.eq]: userId } };
+  }
 
   const limit = 20;
   const offset = limit * (+pageNumber - 1);

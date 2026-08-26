@@ -6,11 +6,13 @@ import Ticket from "../../models/Ticket";
 interface Params {
   contactId: number | string;
   ticketId: number | string;
+  companyId: number;
 }
 
 const FindNotesByContactIdAndTicketId = async ({
   contactId,
-  ticketId
+  ticketId,
+  companyId
 }: Params): Promise<TicketNote[]> => {
   const notes: TicketNote[] = await TicketNote.findAll({
     where: {
@@ -20,7 +22,15 @@ const FindNotesByContactIdAndTicketId = async ({
     include: [
       { model: User, as: "user", attributes: ["id", "name", "email"] },
       { model: Contact, as: "contact", attributes: ["id", "name"] },
-      { model: Ticket, as: "ticket", attributes: ["id", "status", "createdAt"] }
+      {
+        model: Ticket,
+        as: "ticket",
+        attributes: ["id", "status", "createdAt"],
+        // O dono da observacao e o ticket. required: true vira INNER JOIN,
+        // entao nota de outra empresa nem entra no resultado.
+        where: { companyId },
+        required: true
+      }
     ],
     order: [["createdAt", "DESC"]]
   });

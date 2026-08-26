@@ -5,6 +5,7 @@ import { getIO } from "../libs/socket";
 import ListService from "../services/QuickMessageService/ListService";
 import CreateService from "../services/QuickMessageService/CreateService";
 import ShowService from "../services/QuickMessageService/ShowService";
+import assertInCompany from "../services/QuickMessageService/assertInCompany";
 import UpdateService from "../services/QuickMessageService/UpdateService";
 import DeleteService from "../services/QuickMessageService/DeleteService";
 import FindService from "../services/QuickMessageService/FindService";
@@ -71,6 +72,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
+
+  await assertInCompany(id, companyId);
 
   const record = await ShowService(id);
 
@@ -97,6 +101,8 @@ export const update = async (
 
   const { id } = req.params;
 
+  await assertInCompany(id, companyId);
+
   const record = await UpdateService({
     ...data,
     userId: Number.parseInt(req.user.id, 10),
@@ -119,6 +125,7 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
+  await assertInCompany(id, companyId);
   await DeleteService(id);
 
   const io = getIO();
