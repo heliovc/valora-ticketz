@@ -10,7 +10,8 @@ import {
   ForeignKey,
   BelongsTo,
   HasMany,
-  DataType
+  DataType,
+  Default
 } from "sequelize-typescript";
 import Company from "./Company";
 import Ticket from "./Ticket";
@@ -33,6 +34,28 @@ class Tag extends Model {
 
   @Column
   kanban: number;
+
+  // ── Gatilho da lista ──────────────────────────────────────
+  // Quando um card entra nesta lista, o CRM manda esta mensagem sozinho.
+  // Vazio = lista sem gatilho, que é o estado de toda lista já existente.
+
+  @Column(DataType.TEXT)
+  autoMessage: string | null;
+
+  /** Espera antes de enviar. Zero = na hora que o card entra. */
+  @Default(0)
+  @Column
+  autoDelayMinutes: number;
+
+  /** Card que volta para a mesma lista não dispara de novo. */
+  @Default(true)
+  @Column
+  autoOnce: boolean;
+
+  /** Fora do expediente, a mensagem espera a abertura em vez de sair de madrugada. */
+  @Default(true)
+  @Column
+  autoBusinessHoursOnly: boolean;
 
   @HasMany(() => TicketTag)
   ticketTags: TicketTag[];

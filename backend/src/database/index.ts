@@ -23,6 +23,7 @@ import UserRating from "../models/UserRating";
 import QueueOption from "../models/QueueOption";
 import Schedule from "../models/Schedule";
 import Tag from "../models/Tag";
+import TagAutomationRun from "../models/TagAutomationRun";
 import TicketTag from "../models/TicketTag";
 import ContactList from "../models/ContactList";
 import ContactListItem from "../models/ContactListItem";
@@ -73,6 +74,7 @@ const models = [
   QueueOption,
   Schedule,
   Tag,
+  TagAutomationRun,
   TicketTag,
   ContactList,
   ContactListItem,

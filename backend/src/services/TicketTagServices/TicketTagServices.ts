@@ -4,6 +4,7 @@ import Ticket from "../../models/Ticket";
 import TicketTag from "../../models/TicketTag";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import { websocketUpdateTicket } from "../TicketServices/UpdateTicketService";
+import { agendarGatilhoDeLista } from "../../queues/tagAutomation";
 
 export async function ticketTagAdd(
   ticketId: number,
@@ -39,6 +40,11 @@ export async function ticketTagAdd(
 
   await ticket.reload();
   websocketUpdateTicket(ticket);
+
+  // Gatilho da lista: este é o ponto ÚNICO por onde um card entra numa lista —
+  // arraste na tela, bot, ou qualquer outro caminho. Sem await: mover um card
+  // não pode ficar esperando (nem falhar por causa de) uma mensagem automática.
+  void agendarGatilhoDeLista(ticketId, tagId, ticket.companyId);
 
   return ticketTag;
 }
