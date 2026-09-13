@@ -23,11 +23,10 @@ const CreateTicketService = async ({
 }: Request): Promise<Ticket> => {
   const defaultWhatsapp = await GetDefaultWhatsApp(companyId);
 
-  let ticket = await CheckContactOpenTickets(
-    contactId,
-    defaultWhatsapp.id,
-    true
-  );
+  // Sem a conexão de propósito: contato com card aberto na conexão B, default
+  // é a A, atendente abre "Nova conversa" pela tela — antes isso criava o
+  // SEGUNDO card. Um número, um card (ver `ticketLookupRules.ts`).
+  let ticket = await CheckContactOpenTickets(contactId, undefined, true);
 
   const include = [
     {

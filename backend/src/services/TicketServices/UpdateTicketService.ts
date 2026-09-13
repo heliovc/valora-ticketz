@@ -172,7 +172,9 @@ const UpdateTicketService = async ({
     }
 
     if (oldStatus === "closed") {
-      await CheckContactOpenTickets(ticket.contactId, ticket.whatsappId);
+      // Reabrir só se NÃO houver card aberto em conexão nenhuma — escopar
+      // pela conexão deixava passar "um aberto na 8 + reabrir o da 7".
+      await CheckContactOpenTickets(ticket.contactId, undefined);
       chatbot = null;
       queueOptionId = null;
     }

@@ -10,6 +10,10 @@ import sequelize from "../../database";
 import Whatsapp from "../../models/Whatsapp";
 import Queue from "../../models/Queue";
 import { incrementCounter } from "../CounterServices/IncrementCounter";
+import {
+  filtroDeCardAberto,
+  precisaMigrarConexao
+} from "./ticketLookupRules";
 
 const createTicketMutex = new Mutex();
 
@@ -34,17 +38,40 @@ const internalFindOrCreateTicketService = async (
   }: FindOrCreateTicketOptions = {}
 ): Promise<{ ticket: Ticket; justCreated: boolean }> => {
   let justCreated = false;
+  const isGroup = !!groupContact;
   const result = await sequelize.transaction(async () => {
+    // Um número, um card: a conversa 1:1 é procurada por EMPRESA, não por
+    // conexão. Quem decide o filtro (e por que grupo é diferente) é
+    // `ticketLookupRules.ts`, que tem teste. Não reintroduzir `whatsappId`
+    // aqui — foi isso que deixou cards presos em conexão morta em 09/09/2026.
     let ticket = await Ticket.findOne({
       where: {
         status: {
           [Op.or]: ["open", "pending"]
         },
-        contactId: groupContact ? groupContact.id : contact.id,
-        whatsappId
+        ...filtroDeCardAberto({
+          contactId: groupContact ? groupContact.id : contact.id,
+          companyId,
+          whatsappId,
+          isGroup
+        })
       },
       order: [["id", "DESC"]]
     });
+
+    // Card veio de outra conexão: passa para a que recebeu a mensagem, senão
+    // a resposta do atendente sai por ela (`GetTicketWbot`) — ou não sai, se a
+    // antiga caiu. O TicketTraking guarda a conexão também e alimenta os
+    // relatórios; sem atualizá-lo o atendimento fica atribuído ao número morto.
+    if (ticket && precisaMigrarConexao(ticket.whatsappId, whatsappId, isGroup)) {
+      await ticket.update({ whatsappId });
+      await FindOrCreateATicketTrakingService({
+        ticketId: ticket.id,
+        companyId,
+        whatsappId,
+        userId: ticket.userId
+      });
+    }
 
     if (ticket && incrementUnread) {
       await ticket.increment("unreadMessages");
@@ -78,6 +105,9 @@ const internalFindOrCreateTicketService = async (
       }
     }
 
+    // Reabertura de card FECHADO segue escopada por conexão de propósito: com
+    // `autoReopenTimeout` = 0 (o padrão) este ramo é morto, e a regra pedida é
+    // justamente que conversa finalizada NÃO volte. Não "consertar" por simetria.
     if (!doNotReopen && !ticket && !groupContact) {
       const reopenTimeout = parseInt(
         await GetCompanySetting(companyId, "autoReopenTimeout", "0"),
