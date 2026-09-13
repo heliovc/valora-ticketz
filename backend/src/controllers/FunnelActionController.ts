@@ -3,7 +3,8 @@ import {
   listarAcoes,
   criarAcao,
   atualizarAcao,
-  apagarAcao
+  apagarAcao,
+  resumoDeAcoes
 } from "../services/FunnelActionServices/FunnelActionServices";
 
 /** `tagId` = "entrada" significa automação de conversa nova (sem lista). */
@@ -35,4 +36,9 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   const { companyId } = req.user;
   await apagarAcao(companyId, +req.params.actionId);
   return res.json({ ok: true });
+};
+
+export const resumo = async (req: Request, res: Response): Promise<Response> => {
+  const { companyId } = req.user;
+  return res.json(await resumoDeAcoes(companyId));
 };

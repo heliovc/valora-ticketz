@@ -114,3 +114,26 @@ export async function apagarAcao(
   }
   await acao.destroy();
 }
+
+/**
+ * Quantas ações ativas cada lista tem, numa chamada só.
+ *
+ * A tela precisa marcar quais listas agem sozinhas. Perguntar lista por lista
+ * seria uma requisição por coluna do funil.
+ *
+ * A chave `entrada` é a automação de conversa nova, que não tem lista.
+ */
+export async function resumoDeAcoes(
+  companyId: number
+): Promise<Record<string, number>> {
+  const acoes = await FunnelAction.findAll({
+    where: { companyId, ativo: true } as any,
+    attributes: ["tagId"]
+  });
+  const resumo: Record<string, number> = {};
+  for (const a of acoes) {
+    const chave = a.tagId === null || a.tagId === undefined ? "entrada" : String(a.tagId);
+    resumo[chave] = (resumo[chave] ?? 0) + 1;
+  }
+  return resumo;
+}

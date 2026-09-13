@@ -9,6 +9,12 @@ import * as FunnelActionController from "../controllers/FunnelActionController";
 const funnelActionRoutes = express.Router();
 
 funnelActionRoutes.get(
+  // Antes da rota com `:tagId` — senão "resumo" seria lido como um id de lista.
+  "/funnel-actions/resumo",
+  isAuth,
+  FunnelActionController.resumo
+);
+funnelActionRoutes.get(
   "/funnel-actions/:tagId",
   isAuth,
   FunnelActionController.index
