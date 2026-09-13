@@ -11,6 +11,7 @@ import {
 } from "sequelize-typescript";
 import Company from "./Company";
 import Tag from "./Tag";
+import FunnelAction from "./FunnelAction";
 import Ticket from "./Ticket";
 
 /**
@@ -36,7 +37,20 @@ class TagAutomationRun extends Model<TagAutomationRun> {
 
   @ForeignKey(() => Tag)
   @Column
-  tagId: number;
+  tagId: number | null;
+
+  /**
+   * A AÇÃO que rodou. O "só na primeira vez" é por ação, não por lista: a mesma
+   * lista pode mandar a mensagem uma vez e ligar o bot sempre.
+   *
+   * Nulo nas linhas antigas, de quando havia uma ação por lista.
+   */
+  @ForeignKey(() => FunnelAction)
+  @Column
+  actionId: number | null;
+
+  @BelongsTo(() => FunnelAction)
+  action: FunnelAction;
 
   @BelongsTo(() => Tag)
   tag: Tag;

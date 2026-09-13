@@ -12,7 +12,8 @@ import {
   Default,
   BeforeCreate,
   BelongsToMany,
-  HasOne
+  HasOne,
+  DataType
 } from "sequelize-typescript";
 import { v4 as uuidv4 } from "uuid";
 
@@ -42,6 +43,17 @@ class Ticket extends Model<Ticket> {
 
   @Column
   unreadMessages: number;
+
+  /**
+   * Bot de IA nesta conversa: `null` segue a configuração da empresa (o
+   * comportamento de sempre), `true`/`false` é decisão desta conversa e vence
+   * a da empresa.
+   *
+   * Existe para a automação do funil poder dizer "o bot atende quem está na
+   * lista Triagem, e para quando um humano assume".
+   */
+  @Column(DataType.BOOLEAN)
+  aiBotEnabled: boolean | null;
 
   @Column
   lastMessage: string;

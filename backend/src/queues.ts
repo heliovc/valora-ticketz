@@ -26,7 +26,7 @@ import formatBody, { mustacheFormat } from "./helpers/Mustache";
 import Setting from "./models/Setting";
 import { parseToMilliseconds } from "./helpers/parseToMilliseconds";
 import { startCampaignQueues } from "./queues/campaign";
-import { startTagAutomationQueue } from "./queues/tagAutomation";
+import { startFunnelAutomationQueue } from "./queues/funnelAutomation";
 import OutOfTicketMessage from "./models/OutOfTicketMessages";
 import { getJidOf } from "./services/WbotServices/getJidOf";
 import { _t } from "./services/TranslationServices/i18nService";
@@ -624,7 +624,7 @@ export async function startQueueProcess() {
   sendScheduledMessages.process("SendMessage", handleSendScheduledMessage);
 
   // Gatilho de lista do funil: card entrou na lista, sai a mensagem.
-  startTagAutomationQueue();
+  startFunnelAutomationQueue();
 
   userMonitor.process("EveryMinute", handleEveryMinute);
 

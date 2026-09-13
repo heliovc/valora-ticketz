@@ -66,6 +66,8 @@ import {
   isAiBotAvailable,
   BotTurn
 } from "../../helpers/aiBot";
+import { botDeveResponder } from "../TagServices/funnelActionRules";
+import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { parseToMilliseconds } from "../../helpers/parseToMilliseconds";
 import { randomValue } from "../../helpers/randomValue";
 import { getJidOf } from "./getJidOf";
@@ -1545,10 +1547,13 @@ const handleAiBotReply = async (
 ): Promise<boolean> => {
   if (!isAiBotAvailable()) return false;
 
-  const enabled =
+  // A decisão da CONVERSA vence a da empresa, nos dois sentidos: uma lista do
+  // funil pode ligar o bot numa conta que o tem desligado (triagem automática
+  // só em parte do funil) e desligá-lo quando um humano assume.
+  const daEmpresa =
     (await GetCompanySetting(ticket.companyId, "aiBotEnabled", "")) ===
     "enabled";
-  if (!enabled) return false;
+  if (!botDeveResponder(ticket.aiBotEnabled, daEmpresa)) return false;
 
   const persona = await GetCompanySetting(ticket.companyId, "aiBotPersona", "");
   const knowledge = await GetCompanySetting(
@@ -1820,6 +1825,18 @@ const handleMessage = async (
 
     if (!ticket) {
       return;
+    }
+
+    // Conversa NOVA: dispara as automações da "Entrada" (automação sem lista).
+    //
+    // COM `await`, de propósito, e antes de a mensagem seguir o fluxo: a ação
+    // "ligar o bot" precisa estar aplicada antes de `handleAiBotReply` decidir,
+    // senão a primeira mensagem do cliente passa com a chave ainda desligada e
+    // ele fica sem resposta — que é justamente o caso que a automação existe
+    // para cobrir. Nunca lança (ver `agendarAcoesDoFunil`).
+    if (justCreated && !msg.key.fromMe) {
+      await agendarAcoesDoFunil(ticket.id, null, companyId);
+      await ticket.reload();
     }
 
     // voltar para o menu inicial
