@@ -46,9 +46,49 @@ export async function listarAcoes(
   });
 }
 
+/**
+ * Todas as automações da empresa, com o nome do gatilho já resolvido.
+ *
+ * Existe porque a automação deixou de ser um apêndice da tela de listas e
+ * ganhou tela própria: sem isto, mostrar "todas as automações" exigiria uma
+ * chamada por lista, e quem tem dez listas pagaria dez idas ao servidor para
+ * abrir uma tela.
+ */
+export async function listarTodasAsAcoes(companyId: number): Promise<
+  Array<FunnelAction & { nomeDoGatilho: string }>
+> {
+  const acoes = await FunnelAction.findAll({
+    where: { companyId } as any,
+    order: [
+      ["tagId", "ASC"],
+      ["ordem", "ASC"]
+    ]
+  });
+
+  const tags = await Tag.findAll({ where: { companyId } as any });
+  const nomePorId = new Map(tags.map(t => [t.id, t.name]));
+
+  return acoes.map(a => {
+    const plano = a.toJSON() as FunnelAction & { nomeDoGatilho: string };
+    // `tagId` nulo é a conversa nova — não pertence a lista nenhuma.
+    plano.nomeDoGatilho = a.tagId
+      ? nomePorId.get(a.tagId) ?? `lista ${a.tagId}`
+      : "Conversa nova";
+    return plano;
+  });
+}
+
 function validar(dados: DadosDaAcao): void {
   if (!dados.tipo || !TIPOS_CONHECIDOS.includes(dados.tipo as any)) {
     throw new AppError("ERR_FUNNEL_ACTION_TYPE", 400);
+  }
+  if (dados.tipo === "email") {
+    const para = String(dados.config?.para ?? "").trim();
+    // Vazio é válido: significa "avise o dono da conta", e quem resolve isso é
+    // a Valora, que sabe o e-mail do titular. Se veio algo, tem de ser e-mail.
+    if (para && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(para)) {
+      throw new AppError("ERR_FUNNEL_ACTION_INVALID_EMAIL", 400);
+    }
   }
   if (dados.tipo === "mensagem") {
     const texto = String(dados.config?.mensagem ?? "").trim();

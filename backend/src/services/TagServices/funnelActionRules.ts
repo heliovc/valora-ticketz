@@ -11,7 +11,16 @@
  * oposto do que se quer (o bot existe justamente para atender fora de hora).
  */
 
-export type TipoDeAcao = "mensagem" | "bot_ligar" | "bot_desligar";
+export type TipoDeAcao =
+  | "mensagem"
+  | "bot_ligar"
+  | "bot_desligar"
+  /**
+   * Avisa alguém da equipe por e-mail. O e-mail NÃO sai daqui: o motor do CRM
+   * não sabe enviar e-mail, e duplicar essa configuração criaria dois lugares
+   * para quebrar. Quem envia é a Valora, avisada por este executor.
+   */
+  | "email";
 
 export interface AcaoDoFunil {
   id: number;
@@ -39,7 +48,8 @@ export const JANELA_ANTI_DUPLICIDADE_SEGUNDOS = 60;
 export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
   "mensagem",
   "bot_ligar",
-  "bot_desligar"
+  "bot_desligar",
+  "email"
 ];
 
 /**
@@ -51,6 +61,16 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
  */
 export function ehAcaoSilenciosa(tipo: string): boolean {
   return tipo === "bot_ligar" || tipo === "bot_desligar";
+}
+
+/**
+ * Ação que sai para fora e por isso pode esperar o expediente.
+ *
+ * E-mail entra aqui junto com a mensagem: avisar o dono da loja às 3h da manhã
+ * é o tipo de automação que a pessoa desliga no dia seguinte.
+ */
+export function respeitaExpedienteSeConfigurado(tipo: string): boolean {
+  return tipo === "mensagem" || tipo === "email";
 }
 
 export function decidirAgendamento(

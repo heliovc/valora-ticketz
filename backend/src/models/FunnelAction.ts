@@ -16,7 +16,11 @@ import Company from "./Company";
 import Tag from "./Tag";
 
 /** O que a automação faz. Tipo desconhecido é ignorado, nunca quebra o fluxo. */
-export type TipoDeAcao = "mensagem" | "bot_ligar" | "bot_desligar";
+// Uma definição só. Havia uma cópia aqui e outra em `funnelActionRules.ts`, e
+// acrescentar um tipo em uma delas fazia o TypeScript recusar a comparação na
+// outra — foi exatamente o que aconteceu ao entrar a ação de e-mail.
+export type { TipoDeAcao } from "../services/TagServices/funnelActionRules";
+import type { TipoDeAcao } from "../services/TagServices/funnelActionRules";
 
 /**
  * Uma ação automática do funil.

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   listarAcoes,
+  listarTodasAsAcoes,
   criarAcao,
   atualizarAcao,
   apagarAcao,
@@ -13,6 +14,14 @@ function lerTagId(bruto: string): number | null {
   const n = Number(bruto);
   return Number.isFinite(n) ? n : null;
 }
+
+export const todas = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { companyId } = req.user;
+  return res.json(await listarTodasAsAcoes(companyId));
+};
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;

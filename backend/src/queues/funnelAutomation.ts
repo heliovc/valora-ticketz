@@ -14,9 +14,11 @@ import { SendMessage } from "../helpers/SendMessage";
 import formatBody from "../helpers/Mustache";
 import { checkOpenHours } from "../helpers/checkOpenHours";
 import { logger } from "../utils/logger";
+import { notificarValoraPorEmail } from "../services/TagServices/notificarValora";
 import {
   decidirAgendamento,
-  decidirExecucao
+  decidirExecucao,
+  respeitaExpedienteSeConfigurado
 } from "../services/TagServices/funnelActionRules";
 
 /**
@@ -185,7 +187,7 @@ async function executar(
     respeitaExpediente,
     // Só consulta o expediente quando a regra pede — evita ida ao banco à toa.
     dentroDoExpediente:
-      respeitaExpediente && acao.tipo === "mensagem"
+      respeitaExpediente && respeitaExpedienteSeConfigurado(acao.tipo)
         ? await dentroDoExpediente(run.companyId)
         : true,
     postergacoes,
@@ -211,6 +213,40 @@ async function executar(
     if (acao.tipo === "bot_ligar" || acao.tipo === "bot_desligar") {
       await aplicarBot(ticket.id, acao.tipo === "bot_ligar");
       await run.update({ sentAt: new Date() } as any);
+      return;
+    }
+
+    if (acao.tipo === "email") {
+      // Quem envia é a Valora — ver `notificarValora.ts` para o porquê.
+      const lista = acao.tagId
+        ? (await Tag.findByPk(acao.tagId))?.name ?? `lista ${acao.tagId}`
+        : "conversa nova";
+
+      // A Valora identifica o cliente pelo `externalId` da empresa, que é o
+      // `user.id` do dono — não pelo id interno do CRM.
+      const empresa = await Company.findByPk(run.companyId);
+      if (!empresa?.externalId) {
+        await run.update({
+          skippedReason: "empresa sem vínculo com a Valora"
+        } as any);
+        return;
+      }
+
+      const enviado = await notificarValoraPorEmail({
+        tenantId: empresa.externalId,
+        para: (acao.config?.para as string) || null,
+        ticketId: ticket.id,
+        contatoNome: ticket.contact?.name ?? "",
+        contatoNumero: ticket.contact?.number ?? "",
+        gatilho: lista,
+        observacao: (acao.config?.observacao as string) || null
+      });
+
+      await run.update(
+        enviado
+          ? ({ sentAt: new Date() } as any)
+          : ({ skippedReason: "Valora não conseguiu enviar o e-mail" } as any)
+      );
       return;
     }
 
