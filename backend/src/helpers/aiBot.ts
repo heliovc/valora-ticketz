@@ -11,15 +11,33 @@ import { logger } from "../utils/logger";
  *
  * Handoff: quando o modelo julgar que deve passar para um humano (cliente
  * pediu atendente, ou não é seguro responder), ele responde APENAS com o
- * token `HANDOFF_TOKEN`. Nesse caso `generateBotReply` retorna `null` e o
- * chamador deixa o ticket para atendimento humano (sem auto-resposta).
+ * token `HANDOFF_TOKEN`. Nesse caso `generateBotReply` devolve
+ * `{ kind: "handoff" }` com uma mensagem de espera — o cliente PRECISA
+ * receber alguma coisa, senão fica no vácuo achando que ninguém viu. O
+ * chamador envia esse texto e deixa o ticket para atendimento humano.
  */
 
 const AI_MODEL = process.env.AI_BOT_MODEL || "claude-haiku-4-5";
 const MAX_TOKENS = Number(process.env.AI_BOT_MAX_TOKENS || 600);
 const HANDOFF_TOKEN = "__HUMANO__";
 
+/**
+ * O que o cliente recebe quando o bot sai de cena. Silêncio aqui é o pior
+ * desfecho possível — principalmente em conversa vinda de anúncio, onde a
+ * pessoa acabou de chegar e ainda não sabe se o canal está vivo.
+ */
+const HANDOFF_MESSAGE =
+  process.env.AI_BOT_HANDOFF_MESSAGE ||
+  "Só um momento, por favor — vou chamar uma pessoa do nosso time para falar com você.";
+
 export type BotTurn = { role: "user" | "assistant"; text: string };
+
+/** Resultado de uma rodada do bot. `text` nunca vem vazio. */
+export type BotReply = {
+  /** `reply`: resposta do bot. `handoff`: avisa e passa para humano. */
+  kind: "reply" | "handoff";
+  text: string;
+};
 
 export type GenerateBotReplyParams = {
   /** Persona / instruções do lojista (tom, papel, regras). */
@@ -82,13 +100,18 @@ function buildSystemPrompt(
 }
 
 /**
- * Gera a resposta do bot. Retorna o texto a enviar, ou `null` quando não há
- * resposta automática (handoff, chave ausente ou erro) — nesse caso o
- * chamador deve deixar o ticket para atendimento humano.
+ * Gera a resposta do bot.
+ *
+ * - `kind: "reply"` — texto do bot, enviar normalmente.
+ * - `kind: "handoff"` — enviar `text` (mensagem de espera) e deixar o ticket
+ *   para atendimento humano. Cobre o token de handoff, a resposta vazia e a
+ *   falha na chamada ao modelo: em todos, o cliente recebe alguma coisa.
+ * - `null` — a chave central não está configurada. É erro de implantação, e
+ *   não evento de conversa: fica em silêncio e sai no log.
  */
 export const generateBotReply = async (
   params: GenerateBotReplyParams
-): Promise<string | null> => {
+): Promise<BotReply | null> => {
   const anthropic = getClient();
   if (!anthropic) {
     logger.warn("[aiBot] ANTHROPIC_API_KEY ausente — bot de IA desabilitado");
@@ -133,12 +156,12 @@ export const generateBotReply = async (
       .trim();
 
     if (!text || text.includes(HANDOFF_TOKEN)) {
-      return null;
+      return { kind: "handoff", text: HANDOFF_MESSAGE };
     }
 
-    return text;
+    return { kind: "reply", text };
   } catch (err) {
     logger.error({ err }, "[aiBot] falha ao gerar resposta do bot");
-    return null;
+    return { kind: "handoff", text: HANDOFF_MESSAGE };
   }
 };

@@ -237,15 +237,16 @@ async function responderComBot(
       contactName: contact.name
     });
 
-    if (!resposta || !resposta.trim()) return;
+    if (!resposta || !resposta.text.trim()) return;
 
-    const { wamid } = await sendText(whatsapp, contact.number, resposta.trim());
+    const texto = resposta.text.trim();
+    const { wamid } = await sendText(whatsapp, contact.number, texto);
     await CreateMessageService({
       messageData: {
         id: wamid,
         ticketId: ticket.id,
         contactId: contact.id,
-        body: resposta.trim(),
+        body: texto,
         fromMe: true,
         read: true,
         ack: 1,

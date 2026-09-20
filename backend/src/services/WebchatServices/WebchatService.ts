@@ -208,13 +208,13 @@ export async function handleVisitorMessage(
         userMessage: body,
         contactName: undefined
       });
-      if (reply && reply.trim()) {
+      if (reply && reply.text.trim()) {
         const botMsg = await CreateMessageService({
           messageData: {
             id: randomUUID(),
             ticketId: ticket.id,
             contactId: contact.id,
-            body: reply.trim(),
+            body: reply.text.trim(),
             fromMe: true,
             read: true,
             channel: CHANNEL

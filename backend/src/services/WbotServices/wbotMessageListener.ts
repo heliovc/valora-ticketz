@@ -1537,7 +1537,8 @@ const AI_BOT_HISTORY_LIMIT = 10;
  * para a Company. Retorna `true` se assumiu a conversa (enviou resposta),
  * `false` para seguir o fluxo padrão (saudação/fila/chatbot ou atendimento
  * humano). Config por lojista em Settings: aiBotEnabled/aiBotPersona/
- * aiBotKnowledge. Handoff e erros retornam `false` (deixa para humano).
+ * aiBotKnowledge. No handoff o cliente recebe a mensagem de espera e a
+ * conversa fica para o humano — por isso o retorno também é `true`.
  */
 const handleAiBotReply = async (
   ticket: Ticket,
@@ -1592,10 +1593,13 @@ const handleAiBotReply = async (
     contactName: contact.name
   });
 
-  // Handoff / erro / chave ausente: deixa o ticket para atendimento humano.
+  // Chave central ausente: erro de implantação, ninguém responde.
   if (!reply) return false;
 
-  await SendWhatsAppMessage({ body: reply, ticket });
+  // No handoff o cliente recebe a mensagem de espera e o ticket fica para o
+  // humano. Damos a mensagem por tratada para não emendar saudação ou menu
+  // logo depois de dizer que vamos chamar alguém.
+  await SendWhatsAppMessage({ body: reply.text, ticket });
   return true;
 };
 
