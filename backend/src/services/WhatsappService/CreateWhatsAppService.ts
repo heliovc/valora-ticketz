@@ -98,7 +98,12 @@ const CreateWhatsAppService = async ({
     throw new AppError((err as Error).message);
   }
 
-  const whatsappFound = await Whatsapp.findOne({ where: { companyId } });
+  // A busca precisa ser DO MESMO CANAL. Sem o filtro, qualquer linha da empresa
+  // — o Chat do Site, o WhatsApp Oficial — fazia a conexão Baileys nova nascer
+  // sem `isDefault`. E é `isDefault` que `GetDefaultWhatsApp` usa para decidir
+  // por onde sai um ticket criado pela API: a conversa ia parar no canal errado,
+  // ou em canal nenhum.
+  const whatsappFound = await Whatsapp.findOne({ where: { companyId, channel } });
 
   isDefault = channel === "whatsapp" ? !whatsappFound : false;
 

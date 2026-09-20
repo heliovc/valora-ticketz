@@ -37,7 +37,23 @@ app.use(
   })
 );
 app.use(cookieParser());
-app.use(express.json());
+app.use(
+  express.json({
+    /**
+     * Guarda o corpo cru APENAS nas rotas do webhook da Meta.
+     *
+     * A assinatura `X-Hub-Signature-256` é um HMAC sobre os bytes exatos que a
+     * Meta enviou; re-serializar o JSON muda esses bytes e a verificação falha
+     * sempre. Guardar o Buffer de TODA requisição custaria memória à toa (o
+     * chat sobe anexos por aqui), por isso a condição pelo caminho.
+     */
+    verify: (req: Request, _res, buf) => {
+      if (req.originalUrl && req.originalUrl.startsWith("/meta/webhook")) {
+        req.rawBody = buf;
+      }
+    }
+  })
+);
 app.use(Sentry.Handlers.requestHandler());
 app.get("/public/*", (req, res) => {
   const publicDir = path.resolve(uploadConfig.directory);

@@ -58,6 +58,14 @@ class Ticket extends Model<Ticket> {
   @Column
   lastMessage: string;
 
+  /**
+   * Quando o CLIENTE falou pela última vez. Só o canal oficial (Cloud API)
+   * escreve e lê isto: passadas 24h desta marca, a Meta recusa texto livre e
+   * só aceita template aprovado. Nulo = nunca recebeu mensagem do cliente.
+   */
+  @Column(DataType.DATE)
+  lastInboundAt: Date | null;
+
   @Default(false)
   @Column
   isGroup: boolean;

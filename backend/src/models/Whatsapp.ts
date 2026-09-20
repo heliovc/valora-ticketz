@@ -129,6 +129,31 @@ class Whatsapp extends Model<Whatsapp> {
 
   @Column(DataType.TEXT)
   channel: string;
+
+  // --- WhatsApp Oficial (Meta Cloud API) -----------------------------------
+  // Preenchidas só quando `channel = "whatsapp_official"`. Ver a migration
+  // 20260920100000 para o porquê de não reusar os campos `facebookUser*`.
+
+  /** Chave de roteamento do webhook — única. */
+  @Column(DataType.TEXT)
+  cloudApiPhoneNumberId: string;
+
+  @Column(DataType.TEXT)
+  cloudApiWabaId: string;
+
+  /** Vazio na fase 1; usado pelo Embedded Signup multi-lojista. */
+  @Column(DataType.TEXT)
+  cloudApiBusinessId: string;
+
+  /** System User token, cifrado (AES-256-GCM). Nunca sai em resposta HTTP. */
+  @Column(DataType.TEXT)
+  cloudApiTokenEnc: string;
+
+  @Column(DataType.TEXT)
+  cloudApiDisplayNumber: string;
+
+  @Column(DataType.TEXT)
+  cloudApiVerifiedName: string;
 }
 
 export default Whatsapp;

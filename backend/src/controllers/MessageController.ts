@@ -29,6 +29,8 @@ import { verifyMessage } from "../services/WbotServices/wbotMessageListener";
 import { getJidOf } from "../services/WbotServices/getJidOf";
 import ShowContactService from "../services/ContactServices/ShowContactService";
 import { verifyContact } from "../services/WbotServices/verifyContact";
+import SendChannelMessage from "../services/ChannelServices/SendChannelMessage";
+import { isBaileys } from "../helpers/channelTraits";
 
 type IndexQuery = {
   pageNumber: string;
@@ -80,7 +82,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const ticket = await ShowTicketService(ticketId, companyId);
   const { channel } = ticket;
-  if (channel === "whatsapp") {
+  // Só o Baileys: este bloco usa `getWbot`, que só existe para a sessão do QR.
+  if (isBaileys(channel)) {
     await SetTicketMessagesAsRead(ticket);
     if (!ticket.isGroup) {
       const contact = await ShowContactService(ticket.contactId, companyId);
@@ -96,31 +99,33 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   }
 
   if (medias) {
-    if (channel === "whatsapp") {
+    if (isBaileys(channel)) {
       await Promise.all(
         medias.map(async (media: Express.Multer.File) => {
           await SendWhatsAppMedia({ media, ticket });
           fs.unlinkSync(media.path);
         })
       );
+    } else {
+      // Sem isto os arquivos temporários ficariam no disco para sempre.
+      medias.forEach((media: Express.Multer.File) => {
+        try {
+          fs.unlinkSync(media.path);
+        } catch {
+          /* arquivo já removido */
+        }
+      });
+      throw new AppError(
+        "Anexos ainda não são enviados por este canal. Mande o texto por aqui e o arquivo pelo celular.",
+        400
+      );
     }
-  } else if (channel === "whatsapp") {
-    await SendWhatsAppMessage({ body, ticket, userId, quotedMsg });
-  } else if (channel === "webchat") {
-    // Chat do Site: não há baileys — apenas persiste a resposta do atendente
-    // (o widget do visitante faz poll dela). Mesmo caminho do bot.
-    await CreateMessageService({
-      messageData: {
-        id: randomUUID(),
-        ticketId: ticket.id,
-        contactId: ticket.contactId,
-        body,
-        fromMe: true,
-        read: true,
-        channel: "webchat"
-      },
-      companyId
-    });
+  } else {
+    // Antes daqui havia uma cadeia de `if` sem `else`: conversa de canal não
+    // previsto respondia 200 SEM ENVIAR NADA, e o atendente via a mensagem
+    // sumir achando que tinha enviado. O adaptador trata cada canal e erra alto
+    // no que não conhece.
+    await SendChannelMessage({ body, ticket, userId, quotedMsg });
   }
 
   return res.send();
