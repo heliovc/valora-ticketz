@@ -1,6 +1,7 @@
 import { Sequelize } from "sequelize-typescript";
 import User from "../models/User";
 import Setting from "../models/Setting";
+import AiBotFile from "../models/AiBotFile";
 import Contact from "../models/Contact";
 import ContactTag from "../models/ContactTag";
 import Ticket from "../models/Ticket";
@@ -62,6 +63,7 @@ const models = [
   WhatsappLidMap,
   ContactCustomField,
   Setting,
+  AiBotFile,
   Queue,
   WhatsappQueue,
   UserQueue,
