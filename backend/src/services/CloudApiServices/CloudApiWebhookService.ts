@@ -8,6 +8,7 @@ import { logger } from "../../utils/logger";
 import { GetCompanySetting } from "../../helpers/CheckSettings";
 import { hmacSha256Hex, safeEqualBuffers } from "../../helpers/cloudApiCrypto";
 import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot";
+import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
 import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
@@ -248,12 +249,14 @@ async function responderComBot(
   try {
     const persona = await GetCompanySetting(companyId, "aiBotPersona", "");
     const knowledge = await GetCompanySetting(companyId, "aiBotKnowledge", "");
+    const files = await ListAiBotFileTextsService(companyId);
     const resposta = await generateBotReply({
       persona,
       knowledge,
       history: historico,
       userMessage: mensagem,
-      contactName: contact.name
+      contactName: contact.name,
+      files
     });
 
     if (!resposta || !resposta.text.trim()) return;

@@ -66,6 +66,7 @@ import {
   isAiBotAvailable,
   BotTurn
 } from "../../helpers/aiBot";
+import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { parseToMilliseconds } from "../../helpers/parseToMilliseconds";
@@ -1585,12 +1586,15 @@ const handleAiBotReply = async (
       text: m.body.trim()
     }));
 
+  const files = await ListAiBotFileTextsService(ticket.companyId);
+
   const reply = await generateBotReply({
     persona,
     knowledge,
     history,
     userMessage: bodyMessage,
-    contactName: contact.name
+    contactName: contact.name,
+    files
   });
 
   // Chave central ausente: erro de implantação, ninguém responde.

@@ -32,6 +32,16 @@ const HANDOFF_MESSAGE =
 
 export type BotTurn = { role: "user" | "assistant"; text: string };
 
+/** Arquivo de consulta do lojista, já com o texto extraído. */
+export type BotFile = { name: string; text: string };
+
+/**
+ * Teto do conjunto de arquivos dentro do prompt. Cada arquivo já vem cortado
+ * na extração; este é o limite da soma, porque dez arquivos no teto individual
+ * estourariam a janela e encareceriam toda conversa da conta.
+ */
+const MAX_CHARS_ARQUIVOS = 40000;
+
 /** Resultado de uma rodada do bot. `text` nunca vem vazio. */
 export type BotReply = {
   /** `reply`: resposta do bot. `handoff`: avisa e passa para humano. */
@@ -50,6 +60,8 @@ export type GenerateBotReplyParams = {
   userMessage: string;
   /** Nome do contato, quando disponível (para personalizar). */
   contactName?: string;
+  /** Arquivos de consulta da empresa (lista de preços, catálogo, FAQ). */
+  files?: BotFile[];
 };
 
 let client: Anthropic | null = null;
@@ -71,10 +83,39 @@ export function isAiBotAvailable(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
+/**
+ * Junta os arquivos de consulta num bloco só, respeitando o teto da soma.
+ * O arquivo que não couber inteiro é cortado, e o corte fica dito no texto —
+ * calar isso faria o modelo tratar uma tabela pela metade como se fosse a
+ * tabela completa, e responder "não temos" para item que existe.
+ */
+function buildFilesBlock(files: BotFile[]): string {
+  const partes: string[] = [];
+  let usado = 0;
+
+  for (const file of files) {
+    if (usado >= MAX_CHARS_ARQUIVOS) break;
+    const restante = MAX_CHARS_ARQUIVOS - usado;
+    const texto = file.text.trim();
+    if (!texto) continue;
+
+    const cabe = texto.length <= restante;
+    const corpo = cabe
+      ? texto
+      : `${texto.slice(0, restante)}\n[...este arquivo foi cortado por tamanho; pode haver itens não listados aqui...]`;
+
+    partes.push(`--- Arquivo: ${file.name} ---\n${corpo}`);
+    usado += corpo.length;
+  }
+
+  return partes.join("\n\n");
+}
+
 function buildSystemPrompt(
   persona: string,
   knowledge: string | undefined,
-  contactName: string | undefined
+  contactName: string | undefined,
+  files: BotFile[] | undefined
 ): string {
   const parts: string[] = [];
   parts.push(
@@ -95,6 +136,20 @@ function buildSystemPrompt(
   );
   if (knowledge && knowledge.trim()) {
     parts.push(`Base de conhecimento:\n${knowledge.trim()}`);
+  }
+  if (files && files.length) {
+    const bloco = buildFilesBlock(files);
+    if (bloco) {
+      parts.push(
+        [
+          "Arquivos de consulta enviados pela empresa. Valem como base de conhecimento:",
+          "- Consulte-os para responder preço, item de catálogo, prazo e condição.",
+          "- Se o cliente perguntar por um item que não está neles, diga que vai confirmar. Não deduza preço de item parecido.",
+          "",
+          bloco
+        ].join("\n")
+      );
+    }
   }
   return parts.join("\n\n");
 }
@@ -121,7 +176,8 @@ export const generateBotReply = async (
   const systemText = buildSystemPrompt(
     params.persona,
     params.knowledge,
-    params.contactName
+    params.contactName,
+    params.files
   );
 
   const messages: Anthropic.MessageParam[] = [

@@ -10,6 +10,7 @@ import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateConta
 import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot";
+import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { logger } from "../../utils/logger";
 
 /**
@@ -201,12 +202,14 @@ export async function handleVisitorMessage(
     try {
       const persona = await GetCompanySetting(companyId, "aiBotPersona", "");
       const knowledge = await GetCompanySetting(companyId, "aiBotKnowledge", "");
+      const files = await ListAiBotFileTextsService(companyId);
       const reply = await generateBotReply({
         persona,
         knowledge,
         history,
         userMessage: body,
-        contactName: undefined
+        contactName: undefined,
+        files
       });
       if (reply && reply.text.trim()) {
         const botMsg = await CreateMessageService({
