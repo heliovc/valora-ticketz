@@ -1,4 +1,5 @@
 import { brNumberVariants } from "../brPhone";
+import { extrairAtribuicao } from "../adReferral";
 import { hmacSha256Hex, safeEqual, safeEqualBuffers } from "../cloudApiCrypto";
 
 /**
@@ -86,5 +87,64 @@ describe("safeEqual", () => {
 
   it("vazio nunca casa com segredo de verdade", () => {
     expect(safeEqual("", "segredo")).toBe(false);
+  });
+});
+
+describe('atribuição de anúncio', () => {
+  const referralCompleto = {
+    source_id: '120210000000000000',
+    source_type: 'ad',
+    source_url: 'https://fb.me/abc123',
+    headline: 'Clínica sem fila de espera',
+    body: 'Agende hoje pelo WhatsApp',
+    ctwa_clid: 'ARxYz9_clique_123',
+  };
+
+  it('captura os seis campos do anúncio', () => {
+    const r = extrairAtribuicao({ referral: referralCompleto });
+    expect(r).toEqual({
+      referralSourceId: '120210000000000000',
+      referralSourceType: 'ad',
+      referralSourceUrl: 'https://fb.me/abc123',
+      referralHeadline: 'Clínica sem fila de espera',
+      referralBody: 'Agende hoje pelo WhatsApp',
+      referralCtwaClid: 'ARxYz9_clique_123',
+    });
+  });
+
+  it('mensagem sem referral é conversa orgânica', () => {
+    expect(extrairAtribuicao({ type: 'text', text: { body: 'oi' } })).toBeNull();
+    expect(extrairAtribuicao({})).toBeNull();
+    expect(extrairAtribuicao(null)).toBeNull();
+  });
+
+  it('referral vazio também é orgânico — não inventa origem', () => {
+    // A Meta manda `referral: {}` às vezes. Gravar seis nulos faria a conversa
+    // aparecer como vinda de anúncio, sem nada para mostrar no cabeçalho.
+    expect(extrairAtribuicao({ referral: {} })).toBeNull();
+    expect(
+      extrairAtribuicao({ referral: { source_id: '', headline: '   ' } }),
+    ).toBeNull();
+  });
+
+  it('referral parcial grava o que veio e deixa o resto nulo', () => {
+    const r = extrairAtribuicao({
+      referral: { source_id: '999', source_type: 'post' },
+    });
+    expect(r?.referralSourceId).toBe('999');
+    expect(r?.referralSourceType).toBe('post');
+    expect(r?.referralHeadline).toBeNull();
+  });
+
+  it('guarda o identificador do clique mesmo sem uso imediato', () => {
+    // É o que casa a venda com a campanha depois; não dá para recuperar.
+    const r = extrairAtribuicao({ referral: { ctwa_clid: 'clique-abc' } });
+    expect(r?.referralCtwaClid).toBe('clique-abc');
+  });
+
+  it('valor que não é texto não vira lixo no banco', () => {
+    const r = extrairAtribuicao({ referral: { source_id: 12345, headline: 'ok' } });
+    expect(r?.referralSourceId).toBeNull();
+    expect(r?.referralHeadline).toBe('ok');
   });
 });

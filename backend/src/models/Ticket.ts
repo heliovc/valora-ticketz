@@ -66,6 +66,36 @@ class Ticket extends Model<Ticket> {
   @Column(DataType.DATE)
   lastInboundAt: Date | null;
 
+  // --- De qual anúncio veio esta conversa -----------------------------------
+  // A Meta manda o `referral` só na PRIMEIRA mensagem depois do clique no
+  // anúncio. Quem não grava na hora perde. Tudo nulo = conversa orgânica.
+  // Só o canal oficial recebe isto; o canal por QR Code nunca preenche.
+
+  /** ID do anúncio ou da publicação na Meta. */
+  @Column(DataType.TEXT)
+  referralSourceId: string | null;
+
+  /** `ad` (anúncio) ou `post` (publicação). */
+  @Column(DataType.TEXT)
+  referralSourceType: string | null;
+
+  @Column(DataType.TEXT)
+  referralSourceUrl: string | null;
+
+  /** Título do anúncio — é o que o atendente reconhece. */
+  @Column(DataType.TEXT)
+  referralHeadline: string | null;
+
+  @Column(DataType.TEXT)
+  referralBody: string | null;
+
+  /**
+   * Identificador do clique. Não aparece na tela: serve para casar a venda com
+   * a campanha no gerenciador da Meta depois.
+   */
+  @Column(DataType.TEXT)
+  referralCtwaClid: string | null;
+
   @Default(false)
   @Column
   isGroup: boolean;

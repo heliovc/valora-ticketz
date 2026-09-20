@@ -18,6 +18,7 @@ import {
   resolveConnectionByPhoneNumberId
 } from "./CloudApiChannel";
 import { sendText } from "./CloudApiSendService";
+import { extrairAtribuicao } from "../../helpers/adReferral";
 
 /**
  * Recebimento do WhatsApp Oficial (Meta Cloud API).
@@ -198,7 +199,25 @@ async function processarMensagem(
 
   // Abre (ou renova) a janela de 24h. Sem esta marca não há como saber, na hora
   // de responder, se a Meta vai aceitar texto livre.
-  await ticket.update({ lastInboundAt: new Date() });
+  const atualizacao: Record<string, unknown> = { lastInboundAt: new Date() };
+
+  // Atribuição de anúncio: grava sempre que vier, inclusive numa conversa que
+  // já existia. Se a pessoa clicou num anúncio novo agora, é esse anúncio que
+  // trouxe ela desta vez — é o que o atendente precisa ver no cabeçalho.
+  const atribuicao = extrairAtribuicao(msg);
+  if (atribuicao) {
+    Object.assign(atualizacao, atribuicao);
+    logger.info(
+      {
+        ticketId: ticket.id,
+        anuncio: atribuicao.referralSourceId,
+        tipo: atribuicao.referralSourceType
+      },
+      "CloudApi: conversa veio de anúncio"
+    );
+  }
+
+  await ticket.update(atualizacao);
 
   await responderComBot(whatsapp, ticket, contact, body, historico);
 }
