@@ -294,7 +294,16 @@ export const initWASocket = async (
           // retryRequestDelayMs: 250,
           // keepAliveIntervalMs: 1000 * 60 * 10 * 3,
           msgRetryCounterCache,
-          // syncFullHistory: true,
+          /**
+           * Pedir o histórico no pareamento.
+           *
+           * Sem isto o WhatsApp manda só um punhado de mensagens recentes, e uma
+           * queda de alguns dias pode não caber nesse punhado — que é exatamente
+           * o caso que a importação veio resolver. O que chega é filtrado para os
+           * últimos 3 dias em `ImportarHistoricoService`, então o Kanban não
+           * enche: o custo é um sincronismo mais demorado logo após ler o QR.
+           */
+          syncFullHistory: true,
           generateHighQualityLinkPreview: true,
           getMessage,
           agent: proxy,
