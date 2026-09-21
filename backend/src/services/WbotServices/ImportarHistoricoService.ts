@@ -45,8 +45,15 @@ function diasParaTras(): number {
   return Math.min(Math.floor(bruto), 30);
 }
 
-/** Só conversa de pessoa: grupo, status e canal de transmissão ficam de fora. */
-const CONVERSA_DE_PESSOA = /@s\.whatsapp\.net$/;
+/**
+ * Só conversa de pessoa: grupo, status e canal de transmissão ficam de fora.
+ *
+ * `@lid` entra junto com `@s.whatsapp.net` porque o WhatsApp passou a entregar
+ * parte das conversas com um identificador anônimo no lugar do telefone — e é
+ * justamente assim que chegam vários leads de anúncio. Deixar o `@lid` de fora
+ * faria a importação pular exatamente as conversas que mais importam aqui.
+ */
+const CONVERSA_DE_PESSOA = /@(s\.whatsapp\.net|lid)$/;
 
 export interface ResumoDaImportacao {
   recebidas: number;
@@ -123,7 +130,10 @@ async function importarUma(
     return true;
   }
 
-  const numero = jid.replace(/@.*$/, "");
+  // Telefone quando dá; o identificador inteiro quando o WhatsApp só manda o
+  // `@lid` — é o mesmo critério que o caminho das mensagens ao vivo já usa, e
+  // manter os dois iguais é o que evita o mesmo lead virar dois contatos.
+  const numero = jid.endsWith("@lid") ? jid : jid.replace(/@.*$/, "");
   const corpo = (await getBodyMessage(msg.message)) ?? "";
   const tipo = descobrirTipo(msg.message);
 
