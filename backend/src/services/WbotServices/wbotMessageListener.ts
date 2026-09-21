@@ -319,8 +319,23 @@ const getContactMessage = async (msg: WAMessage, wbot: Session) => {
       }
     : {
         id: msg.key.remoteJid,
-        lid: msg?.key?.sender_lid,
-        jid: msg?.key?.sender_pn,
+        /*
+         * 🚨 O telefone do outro lado muda de campo conforme a direção: numa
+         * mensagem que ENTRA vem em `sender_*`, numa que SAI vem em
+         * `peer_recipient_*`. Ler só `sender_*` fazia a RESPOSTA do atendente
+         * não encontrar telefone nenhum, cair no identificador anônimo e criar
+         * um segundo cadastro — a pergunta do lead ficava num card e a resposta
+         * noutro, cada um parecendo uma conversa pela metade.
+         *
+         * Foi o que o Hélio encontrou em 21/09/2026 no 5519999457178: a pergunta
+         * dele às 15h48 num card, a resposta às 16h05 em outro.
+         */
+        lid: msg.key.fromMe
+          ? msg.key.peer_recipient_lid || msg.key.sender_lid
+          : msg.key.sender_lid,
+        jid: msg.key.fromMe
+          ? msg.key.peer_recipient_pn || msg.key.sender_pn
+          : msg.key.sender_pn,
         name: msg.key.fromMe ? rawNumber : msg.pushName || msg.verifiedBizName
       };
 };
