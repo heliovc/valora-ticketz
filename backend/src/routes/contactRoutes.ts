@@ -65,6 +65,21 @@ contactRoutes.put(
   ContactController.update
 );
 
+/**
+ * Junta dois cadastros que são a mesma pessoa.
+ *
+ * Declarada ANTES do delete de `/contacts/:contactId` não por ordem — são verbos
+ * diferentes — mas para ficar ao lado do que ela substitui na prática: antes
+ * disto, resolver um lead duplicado só dava apagando um dos dois, e com ele iam
+ * as mensagens.
+ */
+contactRoutes.put(
+  "/contacts/:contactId/merge",
+  apiTokenAuth,
+  isAuth,
+  ContactController.merge
+);
+
 contactRoutes.delete(
   "/contacts/:contactId",
   apiTokenAuth,

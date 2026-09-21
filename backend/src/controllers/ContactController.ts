@@ -9,6 +9,7 @@ import CreateContactService from "../services/ContactServices/CreateContactServi
 import ShowContactService from "../services/ContactServices/ShowContactService";
 import UpdateContactService from "../services/ContactServices/UpdateContactService";
 import DeleteContactService from "../services/ContactServices/DeleteContactService";
+import MergeContactsService from "../services/ContactServices/MergeContactsService";
 import GetContactService from "../services/ContactServices/GetContactService";
 
 import CheckContactNumber, {
@@ -190,6 +191,45 @@ export const update = async (
   );
 
   return res.status(200).json(contact);
+};
+
+/**
+ * Junta o cadastro da URL com o informado em `targetId`, que é o que fica.
+ *
+ * O WhatsApp passou a entregar parte das conversas com um identificador anônimo,
+ * e a mesma pessoa vira dois cards: o histórico num, a mensagem de hoje no
+ * outro. Sem isto, a saída era apagar um dos dois — e apagar leva as mensagens
+ * junto.
+ */
+export const merge = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { contactId } = req.params;
+  const { targetId } = req.body;
+  const { companyId } = req.user;
+
+  if (!targetId) {
+    throw new AppError("ERR_MERGE_TARGET_REQUIRED", 400);
+  }
+
+  const resultado = await MergeContactsService({
+    origemId: +contactId,
+    destinoId: +targetId,
+    companyId
+  });
+
+  const io = getIO();
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-contact`, {
+    action: "delete",
+    contactId: +contactId
+  });
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-contact`, {
+    action: "update",
+    contact: resultado.contato
+  });
+
+  return res.status(200).json(resultado);
 };
 
 export const remove = async (
