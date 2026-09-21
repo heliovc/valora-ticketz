@@ -167,9 +167,18 @@ async function importarUma(
 
   resumo.importadas += 1;
 
-  // O card mostra a última mensagem. Só sobe se esta for mais nova do que a que
-  // já está lá — importar não pode fazer o card andar para trás no tempo.
-  if (!ticket.updatedAt || ticket.updatedAt < quando) {
+  /**
+   * O card mostra a última mensagem, e o Kanban ordena por ela.
+   *
+   * Sobe quando a mensagem é mais nova do que a que já está lá — importar não
+   * pode fazer o card andar para trás no tempo — e também quando o card ainda
+   * não tem prévia nenhuma. Sem esta segunda condição, todo ticket CRIADO pela
+   * importação ficava sem texto: ele nasce com `updatedAt` = agora, que é sempre
+   * mais novo que a mensagem antiga, e a comparação nunca era verdadeira. Deu 69
+   * cards mudos na primeira importação de produção.
+   */
+  const semPrevia = !ticket.lastMessage;
+  if (semPrevia || !ticket.updatedAt || ticket.updatedAt < quando) {
     await ticket.update({
       lastMessage: (corpo || rotuloDaMidia(tipo)).slice(0, 255),
       updatedAt: quando
