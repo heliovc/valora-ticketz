@@ -41,6 +41,7 @@ import formatBody from "../../helpers/Mustache";
 import TicketTraking from "../../models/TicketTraking";
 import UserRating from "../../models/UserRating";
 import SendWhatsAppMessage from "./SendWhatsAppMessage";
+import { importarHistorico } from "./ImportarHistoricoService";
 import Queue from "../../models/Queue";
 import QueueOption from "../../models/QueueOption";
 import VerifyCurrentSchedule, {
@@ -2164,6 +2165,34 @@ const wbotMessageListener = async (
   companyId: number
 ): Promise<void> => {
   try {
+    /**
+     * O histórico que o WhatsApp entrega no pareamento.
+     *
+     * Chega uma vez só, logo depois de o QR ser lido, e até aqui era descartado
+     * — quem ficava dias com a conexão fora religava e encontrava o quadro
+     * vazio, com os leads todos no celular. Ver `ImportarHistoricoService`.
+     *
+     * Registrado antes do `messages.upsert` porque o sincronismo começa a chegar
+     * imediatamente após a conexão abrir.
+     */
+    wbot.ev.on("messaging-history.set", async historico => {
+      try {
+        const resumo = await importarHistorico(
+          historico as never,
+          companyId,
+          wbot.id as number
+        );
+        logger.info(
+          { ...resumo, whatsappId: wbot.id },
+          "[historico] sincronismo do WhatsApp processado"
+        );
+      } catch (err) {
+        // Falhar aqui não pode derrubar a sessão recém-conectada: o atendimento
+        // ao vivo vale mais que o histórico.
+        logger.error({ err }, "[historico] falha ao importar o sincronismo");
+      }
+    });
+
     wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
       logger.trace({ messageUpsert }, "wbotMessageListener: messages.upsert");
       const messages = messageUpsert.messages
