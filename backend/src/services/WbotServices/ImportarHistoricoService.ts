@@ -29,8 +29,21 @@ import { logger } from "../../utils/logger";
  * próprio WhatsApp, e ticket existente é reaproveitado.
  */
 
-/** Janela da importação. Três dias cobre uma queda sem trazer conversa velha. */
-const DIAS_PARA_TRAS = 3;
+/**
+ * Janela da importação, em dias. Três por padrão — pedido do Hélio — e ajustável
+ * por variável de ambiente.
+ *
+ * É ajustável porque o tamanho certo depende de QUANDO a conexão caiu, e isso só
+ * se descobre depois. Sem a variável, esticar a janela custaria um build novo de
+ * quinze minutos com o lead esperando; com ela, é reiniciar o container.
+ */
+function diasParaTras(): number {
+  const bruto = Number(process.env.HISTORICO_DIAS);
+  if (!Number.isFinite(bruto) || bruto <= 0) return 3;
+  // Teto de 30: acima disso a importação deixa de ser "recuperar uma queda" e
+  // vira despejar o WhatsApp inteiro dentro do Kanban.
+  return Math.min(Math.floor(bruto), 30);
+}
 
 /** Só conversa de pessoa: grupo, status e canal de transmissão ficam de fora. */
 const CONVERSA_DE_PESSOA = /@s\.whatsapp\.net$/;
@@ -65,7 +78,8 @@ export async function importarHistorico(
   };
   if (!historico.messages?.length) return resumo;
 
-  const corte = Math.floor(Date.now() / 1000) - DIAS_PARA_TRAS * 24 * 60 * 60;
+  const dias = diasParaTras();
+  const corte = Math.floor(Date.now() / 1000) - dias * 24 * 60 * 60;
 
   // Da mais antiga para a mais nova: assim o "última mensagem" do card termina
   // com a mensagem certa, e não com a primeira que o WhatsApp mandou no pacote.
@@ -87,7 +101,7 @@ export async function importarHistorico(
     }
   }
 
-  logger.info({ ...resumo, companyId, whatsappId }, "[historico] importação concluída");
+  logger.info({ ...resumo, dias, companyId, whatsappId }, "[historico] importação concluída");
   return resumo;
 }
 
