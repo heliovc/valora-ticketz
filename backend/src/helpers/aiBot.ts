@@ -1,6 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import axios from "axios";
 import { logger } from "../utils/logger";
+import {
+  jaSeApresentou,
+  momentoPorExtenso,
+  nomeParaOBot,
+  saudacaoDoPeriodo
+} from "./aiBotTurn";
 
 /**
  * Helper de geração de respostas do bot de IA (Valora).
@@ -99,6 +105,8 @@ export type GenerateBotReplyParams = {
   contactName?: string;
   /** Arquivos de consulta da empresa (lista de preços, catálogo, FAQ). */
   files?: BotFile[];
+  /** Momento da resposta; só os testes passam outro. */
+  agora?: Date;
 };
 
 let client: Anthropic | null = null;
@@ -162,12 +170,20 @@ function buildFilesBlock(files: BotFile[]): string {
   return partes.join("\n\n");
 }
 
-function buildSystemPrompt(
+type ContextoDaConversa = {
+  contactName?: string;
+  agora: Date;
+  /** Já houve fala nossa na conversa — não cumprimentar de novo. */
+  jaConversou: boolean;
+};
+
+export function buildSystemPrompt(
   persona: string,
   knowledge: string | undefined,
-  contactName: string | undefined,
-  files: BotFile[] | undefined
+  files: BotFile[] | undefined,
+  contexto: ContextoDaConversa
 ): string {
+  const nome = nomeParaOBot(contexto.contactName);
   const parts: string[] = [];
   parts.push(
     persona?.trim() ||
@@ -180,7 +196,14 @@ function buildSystemPrompt(
       "- Use SOMENTE as informações da base de conhecimento abaixo. Nunca invente preços, prazos, políticas ou dados que não estejam nela.",
       "- Não prometa nada que dependa de aprovação humana sem deixar claro que será confirmado.",
       `- Se o cliente pedir para falar com um humano/atendente, ou se você não tiver informação segura para responder, responda APENAS com o token exato ${HANDOFF_TOKEN} e nada mais.`,
-      contactName ? `- O cliente se chama ${contactName}.` : ""
+      nome
+        ? `- O cliente se chama ${nome}. Escreva o nome assim, com inicial maiúscula.`
+        : "",
+      `- Agora é ${momentoPorExtenso(contexto.agora)} (horário de Brasília). Se for cumprimentar, diga "${saudacaoDoPeriodo(contexto.agora)}" — nunca outra saudação de período.`,
+      "- Quando o cliente manda várias mensagens seguidas, elas chegam juntas, uma por linha. Responda a todas numa resposta só.",
+      contexto.jaConversou
+        ? "- Você JÁ se apresentou nesta conversa. Não cumprimente de novo, não repita seu nome nem a empresa e não agradeça o contato outra vez: responda direto ao que o cliente acabou de dizer. Estas regras valem mesmo que as instruções acima mandem se apresentar."
+        : "- Esta é sua primeira resposta na conversa: apresente-se uma única vez."
     ]
       .filter(Boolean)
       .join("\n")
@@ -210,7 +233,7 @@ function buildSystemPrompt(
  * no fim. Um histórico que começa por fala do bot é cortado no início: os dois
  * provedores esperam a conversa abrindo pelo cliente.
  */
-function buildTurns(params: GenerateBotReplyParams): BotTurn[] {
+export function buildTurns(params: GenerateBotReplyParams): BotTurn[] {
   const history = [...params.history];
   while (history.length && history[0].role === "assistant") {
     history.shift();
@@ -349,8 +372,12 @@ export const generateBotReply = async (
   const systemText = buildSystemPrompt(
     params.persona,
     params.knowledge,
-    params.contactName,
-    params.files
+    params.files,
+    {
+      contactName: params.contactName,
+      agora: params.agora || new Date(),
+      jaConversou: jaSeApresentou(params.history)
+    }
   );
   const turns = buildTurns(params);
 

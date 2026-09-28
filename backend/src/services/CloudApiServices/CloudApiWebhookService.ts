@@ -7,7 +7,8 @@ import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
 import { GetCompanySetting } from "../../helpers/CheckSettings";
 import { hmacSha256Hex, safeEqualBuffers } from "../../helpers/cloudApiCrypto";
-import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot";
+import { generateBotReply, isAiBotAvailable } from "../../helpers/aiBot";
+import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
@@ -109,16 +110,13 @@ function extrairTexto(msg: any): { body: string; mediaType?: string } {
 }
 
 /** Histórico recente para o bot, do mais antigo ao mais novo. */
-async function montarHistorico(ticketId: number): Promise<BotTurn[]> {
+async function mensagensRecentes(ticketId: number): Promise<Message[]> {
   const rows = await Message.findAll({
     where: { ticketId },
     order: [["createdAt", "DESC"]],
     limit: HISTORY_LIMIT
   });
-  return rows
-    .reverse()
-    .filter(m => m.body && m.body.trim())
-    .map(m => ({ role: m.fromMe ? "assistant" : "user", text: m.body } as BotTurn));
+  return rows.reverse();
 }
 
 /**
@@ -181,9 +179,6 @@ async function processarMensagem(
     CHANNEL
   );
 
-  // Histórico ANTES de gravar a mensagem atual (o bot recebe a atual à parte).
-  const historico = await montarHistorico(ticket.id);
-
   await CreateMessageService({
     messageData: {
       id: wamid,
@@ -220,7 +215,11 @@ async function processarMensagem(
 
   await ticket.update(atualizacao);
 
-  await responderComBot(whatsapp, ticket, contact, body, historico);
+  // A resposta espera o cliente parar de digitar: várias mensagens seguidas
+  // recebem uma resposta só, montada do banco quando a rajada termina.
+  agruparRajada(ticket.id, () =>
+    responderComBot(whatsapp, ticket.id, contact)
+  );
 }
 
 /**
@@ -232,12 +231,14 @@ async function processarMensagem(
  */
 async function responderComBot(
   whatsapp: Whatsapp,
-  ticket: Ticket,
-  contact: Contact,
-  mensagem: string,
-  historico: BotTurn[]
+  ticketId: number,
+  contact: Contact
 ): Promise<void> {
   const { companyId } = whatsapp;
+  // Estado de agora, não o de quando a mensagem chegou: durante a espera um
+  // atendente pode ter assumido ou o funil desligado o bot.
+  const ticket = await Ticket.findByPk(ticketId);
+  if (!ticket) return;
   const daEmpresa =
     (await GetCompanySetting(companyId, "aiBotEnabled", "disabled")) === "enabled";
 
@@ -247,14 +248,19 @@ async function responderComBot(
   if (ticket.userId) return;
 
   try {
+    const { history, pendente } = separarTurnoAtual(
+      await mensagensRecentes(ticketId)
+    );
+    if (!pendente) return;
+
     const persona = await GetCompanySetting(companyId, "aiBotPersona", "");
     const knowledge = await GetCompanySetting(companyId, "aiBotKnowledge", "");
     const files = await ListAiBotFileTextsService(companyId);
     const resposta = await generateBotReply({
       persona,
       knowledge,
-      history: historico,
-      userMessage: mensagem,
+      history,
+      userMessage: pendente,
       contactName: contact.name,
       files
     });

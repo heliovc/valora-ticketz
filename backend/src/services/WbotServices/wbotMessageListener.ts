@@ -62,11 +62,8 @@ import { getPublicPath } from "../../helpers/GetPublicPath";
 import { Session } from "../../libs/wbot";
 import { checkCompanyCompliant } from "../../helpers/CheckCompanyCompliant";
 import { transcriber } from "../../helpers/transcriber";
-import {
-  generateBotReply,
-  isAiBotAvailable,
-  BotTurn
-} from "../../helpers/aiBot";
+import { generateBotReply, isAiBotAvailable } from "../../helpers/aiBot";
+import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
@@ -1547,21 +1544,22 @@ const handleChartbot = async (
   }
 };
 
-const AI_BOT_HISTORY_LIMIT = 10;
+const AI_BOT_HISTORY_LIMIT = 12;
 
 /**
- * Bot de IA (Valora): gera e envia a resposta automática quando habilitado
- * para a Company. Retorna `true` se assumiu a conversa (enviou resposta),
+ * Bot de IA (Valora): assume a conversa quando habilitado para a Company ou
+ * para o ticket. Retorna `true` se assumiu (a resposta sai logo depois),
  * `false` para seguir o fluxo padrão (saudação/fila/chatbot ou atendimento
  * humano). Config por lojista em Settings: aiBotEnabled/aiBotPersona/
  * aiBotKnowledge. No handoff o cliente recebe a mensagem de espera e a
  * conversa fica para o humano — por isso o retorno também é `true`.
+ *
+ * A resposta espera o cliente parar de digitar (`agruparRajada`): "Oi" e
+ * "Boa tarde tudo bem" em sequência recebem UMA resposta, não duas.
  */
 const handleAiBotReply = async (
   ticket: Ticket,
-  contact: Contact,
-  bodyMessage: string,
-  wbot: Session
+  contact: Contact
 ): Promise<boolean> => {
   if (!isAiBotAvailable()) return false;
 
@@ -1573,54 +1571,64 @@ const handleAiBotReply = async (
     "enabled";
   if (!botDeveResponder(ticket.aiBotEnabled, daEmpresa)) return false;
 
-  const persona = await GetCompanySetting(ticket.companyId, "aiBotPersona", "");
-  const knowledge = await GetCompanySetting(
-    ticket.companyId,
-    "aiBotKnowledge",
-    ""
-  );
-
-  // Histórico recente da conversa (cronológico), só texto.
-  const recent = await Message.findAll({
-    where: { ticketId: ticket.id, isDeleted: false },
-    order: [["createdAt", "DESC"]],
-    limit: AI_BOT_HISTORY_LIMIT + 1
-  });
-
-  const chronological = recent.reverse();
-  // A mensagem atual costuma já estar persistida como último item; remove-a
-  // para não duplicar (ela é passada como userMessage).
-  const last = chronological[chronological.length - 1];
-  if (last && !last.fromMe && (last.body || "").trim() === bodyMessage.trim()) {
-    chronological.pop();
-  }
-
-  const history: BotTurn[] = chronological
-    .filter(m => m.body && m.body.trim())
-    .map(m => ({
-      role: m.fromMe ? "assistant" : "user",
-      text: m.body.trim()
-    }));
-
-  const files = await ListAiBotFileTextsService(ticket.companyId);
-
-  const reply = await generateBotReply({
-    persona,
-    knowledge,
-    history,
-    userMessage: bodyMessage,
-    contactName: contact.name,
-    files
-  });
-
-  // Chave central ausente: erro de implantação, ninguém responde.
-  if (!reply) return false;
-
-  // No handoff o cliente recebe a mensagem de espera e o ticket fica para o
-  // humano. Damos a mensagem por tratada para não emendar saudação ou menu
-  // logo depois de dizer que vamos chamar alguém.
-  await SendWhatsAppMessage({ body: reply.text, ticket });
+  agruparRajada(ticket.id, () => responderRajadaComBot(ticket.id, contact));
   return true;
+};
+
+/** Responde de uma vez tudo o que o cliente mandou desde a nossa última fala. */
+const responderRajadaComBot = async (
+  ticketId: number,
+  contact: Contact
+): Promise<void> => {
+  try {
+    // Durante a espera um atendente pode ter assumido ou o bot ter sido
+    // desligado pelo funil: vale o estado de agora, não o de quando chegou.
+    const ticket = await Ticket.findByPk(ticketId);
+    if (!ticket || ticket.userId) return;
+    const daEmpresa =
+      (await GetCompanySetting(ticket.companyId, "aiBotEnabled", "")) ===
+      "enabled";
+    if (!botDeveResponder(ticket.aiBotEnabled, daEmpresa)) return;
+
+    const recent = await Message.findAll({
+      where: { ticketId, isDeleted: false },
+      order: [["createdAt", "DESC"]],
+      limit: AI_BOT_HISTORY_LIMIT
+    });
+    const { history, pendente } = separarTurnoAtual(recent.reverse());
+    if (!pendente) return;
+
+    const persona = await GetCompanySetting(
+      ticket.companyId,
+      "aiBotPersona",
+      ""
+    );
+    const knowledge = await GetCompanySetting(
+      ticket.companyId,
+      "aiBotKnowledge",
+      ""
+    );
+    const files = await ListAiBotFileTextsService(ticket.companyId);
+
+    const reply = await generateBotReply({
+      persona,
+      knowledge,
+      history,
+      userMessage: pendente,
+      contactName: contact.name,
+      files
+    });
+
+    // Chave central ausente: erro de implantação, ninguém responde.
+    if (!reply) return;
+
+    // No handoff o cliente recebe a mensagem de espera e o ticket fica para o
+    // humano.
+    await SendWhatsAppMessage({ body: reply.text, ticket });
+  } catch (err) {
+    Sentry.captureException(err);
+    logger.error({ err, ticketId }, "[aiBot] falha ao responder a rajada");
+  }
 };
 
 const handleMessage = async (
@@ -2024,12 +2032,7 @@ const handleMessage = async (
       !contact.disableBot &&
       bodyMessage
     ) {
-      const handledByAiBot = await handleAiBotReply(
-        ticket,
-        contact,
-        bodyMessage,
-        wbot
-      );
+      const handledByAiBot = await handleAiBotReply(ticket, contact);
       if (handledByAiBot) return;
     }
 
