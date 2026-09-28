@@ -156,17 +156,20 @@ export function decidirExecucao(params: {
 /**
  * O bot responde nesta conversa?
  *
- * A decisão da CONVERSA vence a da empresa, nos dois sentidos: uma lista pode
- * ligar o bot numa conta que o tem desligado por padrão (triagem automática só
- * em parte do funil), e pode desligá-lo quando um humano assume — que é o caso
- * que mais importa, porque bot respondendo por cima do atendente é o erro que o
- * cliente percebe na hora.
+ * A chave geral da empresa é o interruptor mestre: desligada, o bot não
+ * responde em NENHUM card, nem nos que uma lista ou o botão do card ligaram.
+ * Decisão do Hélio em 28/09/2026, depois de o bot responder um cliente com a
+ * plataforma desligada porque o card tinha sido ligado antes.
+ *
+ * Com a chave geral ligada, a conversa pode sair do padrão: desligar quando um
+ * humano assume (bot por cima do atendente é o erro que o cliente percebe na
+ * hora) ou ser ligada por uma lista. Para o bot atuar só em parte do funil,
+ * liga-se a chave geral e desliga-se na Entrada do funil.
  */
 export function botDeveResponder(
   daConversa: boolean | null | undefined,
   daEmpresa: boolean
 ): boolean {
-  if (daConversa === true) return true;
-  if (daConversa === false) return false;
-  return daEmpresa;
+  if (!daEmpresa) return false;
+  return daConversa !== false;
 }

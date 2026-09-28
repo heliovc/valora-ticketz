@@ -187,8 +187,8 @@ describe("o bot responde nesta conversa?", () => {
     expect(botDeveResponder(false, true)).toBe(false);
   });
 
-  it("conversa ligada vence a empresa desligada", () => {
-    // Triagem automática só em parte do funil, numa conta sem bot por padrão.
-    expect(botDeveResponder(true, false)).toBe(true);
+  it("🚨 empresa desligada desliga todos os cards, até os ligados pela lista", () => {
+    expect(botDeveResponder(true, false)).toBe(false);
+    expect(botDeveResponder(null, false)).toBe(false);
   });
 });
