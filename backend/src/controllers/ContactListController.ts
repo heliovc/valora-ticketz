@@ -13,6 +13,7 @@ import { head } from "lodash";
 import ContactList from "../models/ContactList";
 
 import AppError from "../errors/AppError";
+import { registroDaEmpresa } from "../helpers/registroDaEmpresa";
 import { ImportContacts } from "../services/ContactListService/ImportContacts";
 
 type IndexQuery = {
@@ -74,6 +75,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
 
+  await registroDaEmpresa(ContactList, id, req.user.companyId, "ERR_NO_CONTACTLIST_FOUND");
   const record = await ShowService(id);
 
   return res.status(200).json(record);
@@ -98,8 +100,10 @@ export const update = async (
 
   const { id } = req.params;
 
+  await registroDaEmpresa(ContactList, id, companyId, "ERR_NO_CONTACTLIST_FOUND");
+  const { companyId: _c, id: _i, ...dados } = data as any;
   const record = await UpdateService({
-    ...data,
+    ...dados,
     id
   });
 
@@ -119,6 +123,7 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
+  await registroDaEmpresa(ContactList, id, companyId, "ERR_NO_CONTACTLIST_FOUND");
   await DeleteService(id);
 
   const io = getIO();
@@ -134,8 +139,9 @@ export const findList = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const params = req.query as FindParams;
-  const records: ContactList[] = await FindService(params);
+  const records: ContactList[] = await FindService({
+    companyId: String(req.user.companyId)
+  });
 
   return res.status(200).json(records);
 };
@@ -146,6 +152,7 @@ export const upload = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { companyId } = req.user;
 
+  await registroDaEmpresa(ContactList, id, companyId, "ERR_NO_CONTACTLIST_FOUND");
   const response = await ImportContacts(+id, companyId, file);
 
   const io = getIO();

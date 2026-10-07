@@ -12,6 +12,8 @@ import FindService from "../services/ContactListItemService/FindService";
 import ContactListItem from "../models/ContactListItem";
 
 import AppError from "../errors/AppError";
+import ContactList from "../models/ContactList";
+import { registroDaEmpresa } from "../helpers/registroDaEmpresa";
 
 type IndexQuery = {
   searchParam: string;
@@ -61,6 +63,14 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     throw new AppError(err.message);
   }
 
+  // Sem esta checagem dava para enfiar número na lista (e na campanha) de
+  // outra empresa.
+  await registroDaEmpresa(
+    ContactList,
+    (data as any).contactListId,
+    companyId,
+    "ERR_NO_CONTACTLIST_FOUND"
+  );
   const record = await CreateService({
     ...data,
     companyId
@@ -78,6 +88,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
 
+  await registroDaEmpresa(ContactListItem, id, req.user.companyId, "ERR_NO_CONTACTLISTITEM_FOUND");
   const record = await ShowService(id);
 
   return res.status(200).json(record);
@@ -102,8 +113,10 @@ export const update = async (
 
   const { id } = req.params;
 
+  await registroDaEmpresa(ContactListItem, id, companyId, "ERR_NO_CONTACTLISTITEM_FOUND");
+  const { companyId: _c, id: _i, contactListId: _l, ...dados } = data as any;
   const record = await UpdateService({
-    ...data,
+    ...dados,
     id
   });
 
@@ -123,6 +136,7 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
+  await registroDaEmpresa(ContactListItem, id, companyId, "ERR_NO_CONTACTLISTITEM_FOUND");
   await DeleteService(id);
 
   const io = getIO();
@@ -139,7 +153,10 @@ export const findList = async (
   res: Response
 ): Promise<Response> => {
   const params = req.query as unknown as FindParams;
-  const records: ContactListItem[] = await FindService(params);
+  const records: ContactListItem[] = await FindService({
+    contactListId: params.contactListId,
+    companyId: req.user.companyId
+  });
 
   return res.status(200).json(records);
 };
