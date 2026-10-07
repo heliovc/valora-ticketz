@@ -46,6 +46,12 @@ export async function conexaoOficialDaEmpresa(
   if (!conexao) {
     throw new AppError("Conexão do WhatsApp Oficial não encontrada.", 404);
   }
+  if (!conexao.cloudApiTokenEnc) {
+    throw new AppError(
+      "Esta conexão está sem o token da Meta. Preencha em CRM → Canais → WhatsApp Oficial.",
+      400
+    );
+  }
   if (!conexao.cloudApiWabaId) {
     throw new AppError(
       "Esta conexão não tem o identificador da conta do WhatsApp (WABA ID). Preencha em CRM → Canais → WhatsApp Oficial.",
