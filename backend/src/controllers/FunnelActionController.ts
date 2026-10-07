@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
+import AppError from "../errors/AppError";
 import {
+  Gatilho,
   listarAcoes,
   listarTodasAsAcoes,
   criarAcao,
@@ -8,11 +10,20 @@ import {
   resumoDeAcoes
 } from "../services/FunnelActionServices/FunnelActionServices";
 
-/** `tagId` = "entrada" significa automação de conversa nova (sem lista). */
-function lerTagId(bruto: string): number | null {
-  if (bruto === "entrada" || bruto === "null") return null;
+/**
+ * O gatilho vem na rota: `entrada` = conversa nova do Funil principal,
+ * `entrada-<id>` = conversa nova do quadro da conexão `<id>`, número = lista.
+ * Qualquer outra coisa é 404 — antes, lixo na rota virava "Entrada" calado.
+ */
+function lerGatilho(bruto: string): Gatilho {
+  if (bruto === "entrada" || bruto === "null") {
+    return { tagId: null, whatsappId: null };
+  }
+  const quadro = /^entrada-(\d+)$/.exec(bruto);
+  if (quadro) return { tagId: null, whatsappId: Number(quadro[1]) };
   const n = Number(bruto);
-  return Number.isFinite(n) ? n : null;
+  if (Number.isInteger(n) && n > 0) return { tagId: n, whatsappId: null };
+  throw new AppError("ERR_NOT_FOUND", 404);
 }
 
 export const todas = async (
@@ -25,13 +36,13 @@ export const todas = async (
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;
-  const acoes = await listarAcoes(companyId, lerTagId(req.params.tagId));
+  const acoes = await listarAcoes(companyId, lerGatilho(req.params.tagId));
   return res.json(acoes);
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;
-  const acao = await criarAcao(companyId, lerTagId(req.params.tagId), req.body);
+  const acao = await criarAcao(companyId, lerGatilho(req.params.tagId), req.body);
   return res.status(201).json(acao);
 };
 

@@ -11,6 +11,9 @@ import Whatsapp from "../models/Whatsapp";
 import QueueModel from "../models/Queue";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
 import { SendMessage } from "../helpers/SendMessage";
+import { isBaileys, isOficial } from "../helpers/channelTraits";
+import SendChannelMessage from "../services/ChannelServices/SendChannelMessage";
+import { dentroDaJanela } from "../services/CloudApiServices/CloudApiSendService";
 import formatBody from "../helpers/Mustache";
 import { checkOpenHours } from "../helpers/checkOpenHours";
 import { logger } from "../utils/logger";
@@ -90,8 +93,25 @@ export async function agendarAcoesDoFunil(
   companyId: number
 ): Promise<void> {
   try {
+    // Conversa nova: só as automações do quadro da conversa. Conexão com
+    // quadro próprio usa as dela; as demais usam as do Funil principal.
+    let onde: Record<string, unknown> = { companyId, tagId, ativo: true };
+    if (tagId === null) {
+      const ticket = await Ticket.findOne({
+        where: { id: ticketId, companyId },
+        attributes: ["id", "whatsappId"]
+      });
+      if (!ticket) return;
+      const conexao = ticket.whatsappId
+        ? await Whatsapp.findOne({
+            where: { id: ticket.whatsappId, companyId },
+            attributes: ["id", "ownBoard"]
+          })
+        : null;
+      onde = { ...onde, whatsappId: conexao?.ownBoard ? conexao.id : null };
+    }
     const acoes = await FunnelAction.findAll({
-      where: { companyId, tagId, ativo: true } as any,
+      where: onde as any,
       order: [["ordem", "ASC"]]
     });
     if (acoes.length === 0) return;
@@ -159,7 +179,10 @@ async function executar(
     return;
   }
 
-  const ticket = await Ticket.findByPk(run.ticketId, {
+  // Presa à empresa da execução: run e ticket nascem juntos aqui dentro, mas
+  // a checagem é barata e fecha a porta se um dia alguém enfileirar de fora.
+  const ticket = await Ticket.findOne({
+    where: { id: run.ticketId, companyId: run.companyId },
     include: [
       { model: Contact, as: "contact" },
       { model: QueueModel, as: "queue" },
@@ -251,9 +274,33 @@ async function executar(
     }
 
     // mensagem
+    const corpo = formatBody(String(acao.config?.mensagem ?? ""), ticket);
+
+    // Canais sem sessão do Baileys saem pela conexão do próprio card — é o que
+    // garante que a automação do quadro do WhatsApp Oficial nunca fale pelo
+    // número de outro quadro.
+    if (!isBaileys(ticket.channel)) {
+      if (isOficial(ticket.channel) && !dentroDaJanela(ticket)) {
+        await run.update({
+          skippedReason:
+            "fora da janela de 24h do WhatsApp Oficial: só sai modelo aprovado"
+        } as any);
+        return;
+      }
+      await SendChannelMessage({ body: corpo, ticket });
+      await run.update({ sentAt: new Date() } as any);
+      logger.info(
+        `[funnel] enviado ticket=${ticket.id} acao=${acao.id} canal=${ticket.channel}`
+      );
+      return;
+    }
+
     const whatsapp =
-      (ticket.whatsappId ? await Whatsapp.findByPk(ticket.whatsappId) : null) ||
-      (await GetDefaultWhatsApp(run.companyId));
+      (ticket.whatsappId
+        ? await Whatsapp.findOne({
+            where: { id: ticket.whatsappId, companyId: run.companyId }
+          })
+        : null) || (await GetDefaultWhatsApp(run.companyId));
     if (!whatsapp) {
       await run.update({
         skippedReason: "sem conexão de WhatsApp disponível"
@@ -263,7 +310,7 @@ async function executar(
 
     await SendMessage(whatsapp, {
       number: ticket.contact.number,
-      body: formatBody(String(acao.config?.mensagem ?? ""), ticket),
+      body: corpo,
       // Grava na conversa: o atendente precisa ver o que saiu sem ele digitar.
       saveOnTicket: ticket.id
     });

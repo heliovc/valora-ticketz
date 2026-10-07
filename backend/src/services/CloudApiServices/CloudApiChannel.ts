@@ -54,6 +54,25 @@ export async function getCompanyConnection(
   });
 }
 
+/**
+ * A conexão oficial por onde uma conversa sai: a do próprio card, sempre da
+ * mesma empresa. Só cai na conexão oficial da empresa quando o card não aponta
+ * para uma — com dois números oficiais, responder pelo outro misturaria os
+ * quadros e mostraria ao cliente um número que ele nunca chamou.
+ */
+export async function conexaoDoTicket(ticket: {
+  whatsappId?: number | null;
+  companyId: number;
+}): Promise<Whatsapp | null> {
+  if (ticket.whatsappId) {
+    const doCard = await Whatsapp.findOne({
+      where: { id: ticket.whatsappId, companyId: ticket.companyId, channel: CHANNEL }
+    });
+    if (doCard) return doCard;
+  }
+  return getCompanyConnection(ticket.companyId);
+}
+
 /** Token em claro. Lança se a conexão não tiver credencial gravada. */
 export function getToken(whatsapp: Whatsapp): string {
   if (!whatsapp.cloudApiTokenEnc) {

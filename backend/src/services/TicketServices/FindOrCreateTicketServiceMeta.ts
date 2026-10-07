@@ -12,13 +12,24 @@ interface TicketData {
   unreadMessages?: number;
 }
 
-const FindOrCreateTicketServiceMeta = async (
+/**
+ * Acha ou cria a conversa de um canal sem sessão (WhatsApp Oficial, Chat do
+ * Site).
+ *
+ * Todas as buscas ficam presas à CONEXÃO (`whatsappId`), não só ao canal: com
+ * quadro próprio por conexão, achar a conversa do mesmo contato em outro número
+ * puxava o card de um quadro para o outro. `criada` diz se a conversa entrou
+ * agora na Entrada (nova ou reaberta depois de finalizada) — é o gatilho das
+ * automações de conversa nova.
+ */
+export const FindOrCreateTicketServiceMetaComEstado = async (
   contact: Contact,
   whatsappId: number,
   unreadMessages: number,
   companyId: number,
   channel: string
-): Promise<Ticket> => {
+): Promise<{ ticket: Ticket; criada: boolean }> => {
+  let criada = false;
   let ticket = await Ticket.findOne({
     where: {
       status: {
@@ -26,6 +37,7 @@ const FindOrCreateTicketServiceMeta = async (
       },
       contactId: contact.id,
       companyId,
+      whatsappId,
       channel
     },
     order: [["id", "DESC"]]
@@ -39,12 +51,16 @@ const FindOrCreateTicketServiceMeta = async (
     ticket = await Ticket.findOne({
       where: {
         contactId: contact.id,
+        companyId,
+        whatsappId,
         channel
       },
       order: [["updatedAt", "DESC"]]
     });
 
     if (ticket) {
+      // Conversa finalizada que volta: entra de novo na Entrada.
+      criada = true;
       await ticket.update({
         status: "pending",
         userId: null,
@@ -73,7 +89,9 @@ const FindOrCreateTicketServiceMeta = async (
         updatedAt: {
           [Op.between]: [+subHours(new Date(), 2), +new Date()]
         },
-        contactId: contact.id
+        contactId: contact.id,
+        companyId,
+        whatsappId
       },
       order: [["updatedAt", "DESC"]]
     });
@@ -106,6 +124,7 @@ const FindOrCreateTicketServiceMeta = async (
       companyId,
       channel
     });
+    criada = true;
 
     await FindOrCreateATicketTrakingService({
       ticketId: ticket.id,
@@ -114,14 +133,31 @@ const FindOrCreateTicketServiceMeta = async (
       userId: ticket.userId,
       channel
     });
-    
+
   } else {
     await ticket.update({ whatsappId });
   }
 
   ticket = await ShowTicketService(ticket.id, companyId);
 
-  return ticket;
+  return { ticket, criada };
 };
+
+const FindOrCreateTicketServiceMeta = async (
+  contact: Contact,
+  whatsappId: number,
+  unreadMessages: number,
+  companyId: number,
+  channel: string
+): Promise<Ticket> =>
+  (
+    await FindOrCreateTicketServiceMetaComEstado(
+      contact,
+      whatsappId,
+      unreadMessages,
+      companyId,
+      channel
+    )
+  ).ticket;
 
 export default FindOrCreateTicketServiceMeta;

@@ -14,6 +14,7 @@ import {
 } from "sequelize-typescript";
 import Company from "./Company";
 import Tag from "./Tag";
+import Whatsapp from "./Whatsapp";
 
 /** O que a automação faz. Tipo desconhecido é ignorado, nunca quebra o fluxo. */
 // Uma definição só. Havia uma cópia aqui e outra em `funnelActionRules.ts`, e
@@ -51,6 +52,18 @@ class FunnelAction extends Model<FunnelAction> {
 
   @BelongsTo(() => Tag)
   tag: Tag;
+
+  /**
+   * Só na Entrada (`tagId` nulo): o quadro da conversa nova. Nulo = Funil
+   * principal; preenchido = quadro próprio daquela conexão.
+   */
+  @ForeignKey(() => Whatsapp)
+  @AllowNull(true)
+  @Column
+  whatsappId: number | null;
+
+  @BelongsTo(() => Whatsapp)
+  whatsapp: Whatsapp;
 
   @ForeignKey(() => Company)
   @Column

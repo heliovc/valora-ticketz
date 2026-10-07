@@ -35,6 +35,8 @@ interface TicketData {
   status: string;
   queueId: number;
   userId: number;
+  /** Conexão por onde a conversa sai; ausente = a padrão da empresa. */
+  whatsappId?: number;
 }
 
 const updateMutex = new Mutex();
@@ -157,14 +159,15 @@ export const kanban = async (
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { contactId, userId, queueId }: TicketData = req.body;
+  const { contactId, userId, queueId, whatsappId }: TicketData = req.body;
   const { companyId } = req.user;
 
   const ticket = await CreateTicketService({
     contactId,
     userId,
     companyId,
-    queueId
+    queueId,
+    whatsappId: Number(whatsappId) || undefined
   });
 
   const io = getIO();

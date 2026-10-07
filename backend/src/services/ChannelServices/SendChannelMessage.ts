@@ -6,7 +6,7 @@ import ShowContactService from "../ContactServices/ShowContactService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { CANAL_WEBCHAT, isBaileys, isOficial } from "../../helpers/channelTraits";
-import { getCompanyConnection } from "../CloudApiServices/CloudApiChannel";
+import { conexaoDoTicket } from "../CloudApiServices/CloudApiChannel";
 import {
   dentroDaJanela,
   sendText
@@ -79,7 +79,7 @@ async function enviarPeloOficial({
   body,
   ticket
 }: Pick<EnvioParams, "body" | "ticket">): Promise<Message> {
-  const conexao = await getCompanyConnection(ticket.companyId);
+  const conexao = await conexaoDoTicket(ticket);
   if (!conexao) {
     throw new AppError(
       "O WhatsApp Oficial não está configurado nesta conta. Configure em CRM → Canais.",

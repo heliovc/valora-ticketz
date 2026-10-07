@@ -1,6 +1,7 @@
 import AppError from "../../errors/AppError";
 import FunnelAction from "../../models/FunnelAction";
 import Tag from "../../models/Tag";
+import Whatsapp from "../../models/Whatsapp";
 import { TIPOS_CONHECIDOS } from "../TagServices/funnelActionRules";
 
 /** Teto por lista. Automação é o que queima número de WhatsApp; 10 já é muito. */
@@ -35,13 +36,41 @@ async function assertListaDaEmpresa(
   }
 }
 
+/**
+ * Gatilho de uma automação: uma lista (`tagId`) ou a Entrada de um quadro
+ * (`tagId` nulo + `whatsappId` do quadro; nulo = Funil principal).
+ */
+export interface Gatilho {
+  tagId: number | null;
+  whatsappId: number | null;
+}
+
+/** O quadro da Entrada tem de ser uma conexão da própria empresa. */
+async function assertGatilhoDaEmpresa(
+  gatilho: Gatilho,
+  companyId: number
+): Promise<void> {
+  await assertListaDaEmpresa(gatilho.tagId, companyId);
+  if (gatilho.tagId === null && gatilho.whatsappId) {
+    const conexao = await Whatsapp.findOne({
+      where: { id: gatilho.whatsappId, companyId }
+    });
+    if (!conexao) throw new AppError("ERR_NOT_FOUND", 404);
+  }
+}
+
+const ondeDoGatilho = (gatilho: Gatilho, companyId: number) =>
+  gatilho.tagId === null
+    ? { companyId, tagId: null, whatsappId: gatilho.whatsappId }
+    : { companyId, tagId: gatilho.tagId };
+
 export async function listarAcoes(
   companyId: number,
-  tagId: number | null
+  gatilho: Gatilho
 ): Promise<FunnelAction[]> {
-  await assertListaDaEmpresa(tagId, companyId);
+  await assertGatilhoDaEmpresa(gatilho, companyId);
   return FunnelAction.findAll({
-    where: { companyId, tagId } as any,
+    where: ondeDoGatilho(gatilho, companyId) as any,
     order: [["ordem", "ASC"]]
   });
 }
@@ -67,12 +96,20 @@ export async function listarTodasAsAcoes(companyId: number): Promise<
 
   const tags = await Tag.findAll({ where: { companyId } as any });
   const nomePorId = new Map(tags.map(t => [t.id, t.name]));
+  const conexoes = await Whatsapp.findAll({
+    where: { companyId },
+    attributes: ["id", "name"]
+  });
+  const conexaoPorId = new Map(conexoes.map(w => [w.id, w.name]));
 
   return acoes.map(a => {
     const plano = a.toJSON() as FunnelAction & { nomeDoGatilho: string };
-    // `tagId` nulo é a conversa nova — não pertence a lista nenhuma.
+    // `tagId` nulo é a conversa nova — não pertence a lista nenhuma, mas
+    // pertence a um quadro.
     plano.nomeDoGatilho = a.tagId
       ? nomePorId.get(a.tagId) ?? `lista ${a.tagId}`
+      : a.whatsappId
+      ? `Conversa nova — ${conexaoPorId.get(a.whatsappId) ?? "quadro"}`
       : "Conversa nova";
     return plano;
   });
@@ -105,20 +142,22 @@ function validar(dados: DadosDaAcao): void {
 
 export async function criarAcao(
   companyId: number,
-  tagId: number | null,
+  gatilho: Gatilho,
   dados: DadosDaAcao
 ): Promise<FunnelAction> {
-  await assertListaDaEmpresa(tagId, companyId);
+  await assertGatilhoDaEmpresa(gatilho, companyId);
   validar(dados);
 
-  const quantas = await FunnelAction.count({ where: { companyId, tagId } as any });
+  const onde = ondeDoGatilho(gatilho, companyId);
+  const quantas = await FunnelAction.count({ where: onde as any });
   if (quantas >= MAX_ACOES_POR_LISTA) {
     throw new AppError("ERR_FUNNEL_ACTION_LIMIT", 400);
   }
 
   return FunnelAction.create({
     companyId,
-    tagId,
+    tagId: gatilho.tagId,
+    whatsappId: gatilho.tagId === null ? gatilho.whatsappId : null,
     tipo: dados.tipo,
     config: dados.config ?? {},
     atrasoMinutos: dados.atrasoMinutos ?? 0,
@@ -140,7 +179,15 @@ export async function atualizarAcao(
   }
   // Chave ausente = não mexe; trocar o tipo revalida a configuração inteira.
   validar({ ...(acao.toJSON() as DadosDaAcao), ...dados });
-  await acao.update(dados as any);
+  // Só os campos da ação: gatilho e empresa não mudam por aqui.
+  const {
+    tagId: _t,
+    whatsappId: _w,
+    companyId: _c,
+    id: _i,
+    ...permitidos
+  } = dados as any;
+  await acao.update(permitidos);
   return acao;
 }
 
@@ -168,11 +215,18 @@ export async function resumoDeAcoes(
 ): Promise<Record<string, number>> {
   const acoes = await FunnelAction.findAll({
     where: { companyId, ativo: true } as any,
-    attributes: ["tagId"]
+    attributes: ["tagId", "whatsappId"]
   });
   const resumo: Record<string, number> = {};
   for (const a of acoes) {
-    const chave = a.tagId === null || a.tagId === undefined ? "entrada" : String(a.tagId);
+    // Entrada do Funil principal = "entrada"; do quadro de uma conexão =
+    // "entrada-<id>".
+    const chave =
+      a.tagId === null || a.tagId === undefined
+        ? a.whatsappId
+          ? `entrada-${a.whatsappId}`
+          : "entrada"
+        : String(a.tagId);
     resumo[chave] = (resumo[chave] ?? 0) + 1;
   }
   return resumo;
