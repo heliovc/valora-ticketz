@@ -12,7 +12,12 @@ import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
-import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
+import { FindOrCreateTicketServiceMetaComEstado } from "../TicketServices/FindOrCreateTicketServiceMeta";
+import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
+import {
+  atualizarPorStatus,
+  ultimoDisparoRecebido
+} from "./CloudApiBroadcastService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import {
   CHANNEL,
@@ -171,13 +176,38 @@ async function processarMensagem(
   const nomePerfil = value?.contacts?.[0]?.profile?.name || "";
   const contact = await acharOuCriarContato(companyId, msg.from, nomePerfil);
 
-  const ticket = await FindOrCreateTicketServiceMeta(
+  const { ticket, criada } = await FindOrCreateTicketServiceMetaComEstado(
     contact,
     whatsapp.id,
     1,
     companyId,
     CHANNEL
   );
+
+  // Resposta a um disparo: o card nasce mostrando o que foi enviado, senão o
+  // atendente lê "sim" sem saber a que o cliente disse sim.
+  if (criada) {
+    try {
+      const recebido = await ultimoDisparoRecebido(companyId, whatsapp.id, msg.from);
+      if (recebido?.text) {
+        await CreateMessageService({
+          messageData: {
+            id: `disparo-${recebido.id}-${ticket.id}`,
+            ticketId: ticket.id,
+            contactId: contact.id,
+            body: `📣 Disparo "${(recebido as any).broadcast?.name || ""}":\n${recebido.text}`,
+            fromMe: true,
+            read: true,
+            ack: 2,
+            channel: CHANNEL
+          },
+          companyId
+        });
+      }
+    } catch (err: any) {
+      logger.debug({ message: err?.message }, "CloudApi: sem contexto de disparo");
+    }
+  }
 
   await CreateMessageService({
     messageData: {
@@ -214,6 +244,14 @@ async function processarMensagem(
   }
 
   await ticket.update(atualizacao);
+
+  // Automações de conversa nova — as do quadro desta conexão. Depois da marca
+  // da janela: uma mensagem automática precisa saber que a conversa aceita
+  // texto livre. Aguardado para o "ligar bot" valer já para esta mensagem.
+  if (criada) {
+    await agendarAcoesDoFunil(ticket.id, null, companyId);
+    await ticket.reload();
+  }
 
   // A resposta espera o cliente parar de digitar: várias mensagens seguidas
   // recebem uma resposta só, montada do banco quando a rajada termina.
@@ -303,6 +341,16 @@ async function responderComBot(
 async function processarStatus(whatsapp: Whatsapp, status: any): Promise<void> {
   const mapa: Record<string, number> = { sent: 1, delivered: 2, read: 3 };
   const ack = mapa[status?.status];
+
+  // Destinatário de disparo em massa: atualiza entregue/lido/falhou.
+  await atualizarPorStatus(
+    whatsapp.companyId,
+    status?.id,
+    status?.status,
+    status?.errors?.[0]?.title || status?.errors?.[0]?.message
+  ).catch(err =>
+    logger.debug({ message: err?.message }, "CloudApi: status de disparo ignorado")
+  );
 
   if (status?.status === "failed") {
     logger.warn(

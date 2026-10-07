@@ -27,6 +27,7 @@ import Setting from "./models/Setting";
 import { parseToMilliseconds } from "./helpers/parseToMilliseconds";
 import { startCampaignQueues } from "./queues/campaign";
 import { startFunnelAutomationQueue } from "./queues/funnelAutomation";
+import { startCloudApiBroadcastQueue } from "./services/CloudApiServices/CloudApiBroadcastService";
 import OutOfTicketMessage from "./models/OutOfTicketMessages";
 import { getJidOf } from "./services/WbotServices/getJidOf";
 import { _t } from "./services/TranslationServices/i18nService";
@@ -625,6 +626,9 @@ export async function startQueueProcess() {
 
   // Gatilho de lista do funil: card entrou na lista, sai a mensagem.
   startFunnelAutomationQueue();
+
+  // Disparo em massa pelo WhatsApp Oficial (por modelo aprovado).
+  startCloudApiBroadcastQueue();
 
   userMonitor.process("EveryMinute", handleEveryMinute);
 

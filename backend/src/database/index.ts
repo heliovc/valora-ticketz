@@ -44,6 +44,8 @@ import UserSocketSession from "../models/UserSocketSession";
 import OutOfTicketMessage from "../models/OutOfTicketMessages";
 import Translation from "../models/Translation";
 import Wavoip from "../models/Wavoip";
+import CloudApiBroadcast from "../models/CloudApiBroadcast";
+import CloudApiBroadcastRecipient from "../models/CloudApiBroadcastRecipient";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const dbConfig = require("../config/database");
@@ -95,7 +97,9 @@ const models = [
   OutOfTicketMessage,
   Subscriptions,
   Translation,
-  Wavoip
+  Wavoip,
+  CloudApiBroadcast,
+  CloudApiBroadcastRecipient
 ];
 
 sequelize.addModels(models);
