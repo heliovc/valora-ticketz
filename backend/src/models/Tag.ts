@@ -17,6 +17,7 @@ import Company from "./Company";
 import Ticket from "./Ticket";
 import TicketTag from "./TicketTag";
 import Contact from "./Contact";
+import Whatsapp from "./Whatsapp";
 import ContactTag from "./ContactTag";
 
 @Table
@@ -84,6 +85,17 @@ class Tag extends Model {
     }
   })
   contactsCount: number;
+
+  /**
+   * Quadro a que a coluna pertence. Nulo = Funil principal; preenchido = quadro
+   * próprio daquela conexão (`Whatsapps.ownBoard`).
+   */
+  @ForeignKey(() => Whatsapp)
+  @Column
+  whatsappId: number | null;
+
+  @BelongsTo(() => Whatsapp)
+  whatsapp: Whatsapp;
 
   @ForeignKey(() => Company)
   @Column

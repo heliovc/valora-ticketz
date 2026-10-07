@@ -154,6 +154,15 @@ class Whatsapp extends Model<Whatsapp> {
 
   @Column(DataType.TEXT)
   cloudApiVerifiedName: string;
+
+  /**
+   * Conexão com quadro próprio no Funil: as conversas dela saem do Funil
+   * principal e aparecem só no quadro dela, com colunas próprias
+   * (`Tags.whatsappId`).
+   */
+  @Default(false)
+  @Column
+  ownBoard: boolean;
 }
 
 export default Whatsapp;

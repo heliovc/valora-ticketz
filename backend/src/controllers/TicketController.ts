@@ -27,6 +27,7 @@ type IndexQuery = {
   contactId: string;
   tags: string;
   users: string;
+  board?: string;
 };
 
 interface TicketData {
@@ -54,7 +55,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     users: userIdsStringified,
     withUnreadMessages,
     notClosed,
-    all
+    all,
+    board
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
@@ -77,6 +79,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   }
 
   const { tickets, count, hasMore } = await ListTicketsService({
+    board,
     isSearch: isSearch === "true",
     searchParam,
     contactId: Number(contactId) || undefined,

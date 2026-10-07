@@ -25,6 +25,8 @@ export interface DadosDaConexao {
   /** Só quando trocar; ausente mantém o token já gravado. */
   token?: string;
   name?: string;
+  /** Quadro próprio no Funil; ausente mantém o que já está gravado. */
+  ownBoard?: boolean;
 }
 
 export interface SaudeDaConexao {
@@ -125,7 +127,8 @@ export async function salvarConexao(
     cloudApiWabaId: dados.wabaId?.trim() || existente?.cloudApiWabaId || null,
     cloudApiTokenEnc: encryptCloudApiToken(token),
     cloudApiDisplayNumber: saude.displayNumber || null,
-    cloudApiVerifiedName: saude.verifiedName || null
+    cloudApiVerifiedName: saude.verifiedName || null,
+    ownBoard: dados.ownBoard ?? existente?.ownBoard ?? false
   };
 
   if (existente) {
@@ -149,6 +152,7 @@ export async function descreverConexao(companyId: number) {
     wabaId: conexao.cloudApiWabaId,
     displayNumber: conexao.cloudApiDisplayNumber,
     verifiedName: conexao.cloudApiVerifiedName,
+    ownBoard: !!conexao.ownBoard,
     temToken: !!conexao.cloudApiTokenEnc
   };
 }

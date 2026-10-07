@@ -82,9 +82,15 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
 /** Cria ou atualiza a conexão. Só grava se a Meta aceitar as credenciais. */
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;
-  const { phoneNumberId, wabaId, token, name } = req.body || {};
+  const { phoneNumberId, wabaId, token, name, ownBoard } = req.body || {};
 
-  await salvarConexao(companyId, { phoneNumberId, wabaId, token, name });
+  await salvarConexao(companyId, {
+    phoneNumberId,
+    wabaId,
+    token,
+    name,
+    ownBoard: typeof ownBoard === "boolean" ? ownBoard : undefined
+  });
   return res.status(200).json(await descreverConexao(companyId));
 };
 

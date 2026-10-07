@@ -17,6 +17,7 @@ const ListWhatsAppsService = async ({
       "status",
       "qrcode",
       "isDefault",
+      "ownBoard",
       "updatedAt"
     ],
     where: {

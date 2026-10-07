@@ -40,6 +40,8 @@ interface Request {
   tags: number[];
   users: number[];
   companyId: number;
+  /** "main" = Funil principal; id de conexão = quadro próprio dela. */
+  board?: string;
 }
 
 interface Response {
@@ -47,6 +49,32 @@ interface Response {
   count: number;
   hasMore: boolean;
 }
+
+/**
+ * Filtro do quadro do Funil. O principal mostra tudo menos as conexões que têm
+ * quadro próprio; o quadro de uma conexão mostra só as conversas dela.
+ */
+const condicaoDoQuadro = async (
+  board: string,
+  companyId: number
+): Promise<WhereOptions<Ticket>> => {
+  if (board !== "main") {
+    return { whatsappId: Number(board) || 0 };
+  }
+
+  const comQuadroProprio = await Whatsapp.findAll({
+    where: { companyId, ownBoard: true },
+    attributes: ["id"]
+  });
+  if (!comQuadroProprio.length) return {};
+
+  return {
+    [Op.or]: [
+      { whatsappId: null },
+      { whatsappId: { [Op.notIn]: comQuadroProprio.map(w => w.id) } }
+    ]
+  };
+};
 
 const ListTicketsService = async ({
   isSearch = false,
@@ -65,7 +93,8 @@ const ListTicketsService = async ({
   withUnreadMessages,
   notClosed,
   all,
-  companyId
+  companyId,
+  board
 }: Request): Promise<Response> => {
   let ticketId: number;
 
@@ -309,6 +338,14 @@ const ListTicketsService = async ({
     whereCondition = {
       ...whereCondition,
       status: { [Op.ne]: "closed" }
+    };
+  }
+
+  if (board) {
+    const boardCondition = await condicaoDoQuadro(board, companyId);
+    whereCondition = {
+      ...whereCondition,
+      [Op.and]: [...((whereCondition as any)[Op.and] || []), boardCondition]
     };
   }
 
