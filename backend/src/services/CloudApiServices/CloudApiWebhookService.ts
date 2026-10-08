@@ -341,6 +341,28 @@ async function responderComBot(
  * não é exportada e vive num arquivo de 2200 linhas acoplado ao Baileys —
  * replicar as poucas linhas custa menos que mexer lá.
  */
+/** O erro de entrega da Meta, em português e com o que fazer. */
+function motivoDaFalha(erro: any): string {
+  const codigo = Number(erro?.code);
+  if (codigo === 131026) {
+    return "Não entregue: o número não tem WhatsApp ou não pode receber mensagens de empresas.";
+  }
+  if (codigo === 131049) {
+    return "Não entregue: a Meta segurou a mensagem de marketing porque este número já recebeu muitas recentemente. Tente outro dia.";
+  }
+  if (codigo === 131047) {
+    return "Não entregue: passaram 24h desde a última mensagem do cliente — só modelo aprovado.";
+  }
+  if (codigo === 131050) {
+    return "Não entregue: o cliente parou de receber mensagens de marketing desta empresa.";
+  }
+  if (codigo === 131031 || codigo === 131042) {
+    return "Não entregue: a conta do WhatsApp da empresa está bloqueada ou com pagamento pendente na Meta.";
+  }
+  const titulo = erro?.title || erro?.message;
+  return titulo ? `Não entregue (${codigo || "?"}): ${titulo}` : "Não entregue pela Meta.";
+}
+
 async function processarStatus(whatsapp: Whatsapp, status: any): Promise<void> {
   const mapa: Record<string, number> = { sent: 1, delivered: 2, read: 3 };
   const ack = mapa[status?.status];
@@ -356,6 +378,21 @@ async function processarStatus(whatsapp: Whatsapp, status: any): Promise<void> {
   );
 
   if (status?.status === "failed") {
+    // A falha vira estado da mensagem, com o motivo em português: antes ela
+    // ficava "enviada" para sempre e o atendente nunca sabia.
+    const falha = await Message.findByPk(status?.id);
+    if (falha && falha.companyId === whatsapp.companyId) {
+      await falha.update({
+        ack: -1,
+        deliveryError: motivoDaFalha(status?.errors?.[0])
+      } as any);
+      getIO()
+        .to(falha.ticketId.toString())
+        .emit(`company-${falha.companyId}-appMessage`, {
+          action: "update",
+          message: falha
+        });
+    }
     logger.warn(
       {
         wamid: status?.id,
@@ -369,7 +406,8 @@ async function processarStatus(whatsapp: Whatsapp, status: any): Promise<void> {
   if (!ack || !status?.id) return;
 
   const message = await Message.findByPk(status.id);
-  if (!message || ack <= message.ack) return;
+  // Falha é definitiva: um "sent" atrasado não pode apagá-la.
+  if (!message || message.ack === -1 || ack <= message.ack) return;
 
   await message.update({ ack });
   getIO()

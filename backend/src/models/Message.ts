@@ -37,6 +37,10 @@ class Message extends Model {
   @Column
   ack: number;
 
+  /** WhatsApp Oficial: por que a Meta não entregou (ack -1). */
+  @Column(DataType.TEXT)
+  deliveryError: string | null;
+
   @Default(false)
   @Column
   read: boolean;
