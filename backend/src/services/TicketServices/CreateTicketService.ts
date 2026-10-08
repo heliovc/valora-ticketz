@@ -87,13 +87,33 @@ const CreateTicketService = async ({
   ];
 
   if (ticket) {
-    if (ticket.status === "open" && ticket.userId === userId) {
+    // Card aberto no mesmo quadro e sem atendente (ou do próprio atendente):
+    // a "nova conversa" continua nele — um número, um card. Antes isso dava
+    // erro e obrigava a achar e finalizar o card só para poder escrever.
+    const livre = !ticket.userId || (userId && ticket.userId === Number(userId));
+    if (livre) {
+      if (ticket.status !== "open" || (userId && !ticket.userId)) {
+        await ticket.update({
+          status: "open",
+          ...(userId && !ticket.userId ? { userId } : {})
+        });
+      }
       await ticket.reload({
         include
       });
       return ticket;
     }
-    throw new AppError("ERR_OTHER_OPEN_TICKET");
+    // Está com outra pessoa da equipe: não toma a conversa dela.
+    const dono = await User.findOne({
+      where: { id: ticket.userId, companyId },
+      attributes: ["name"]
+    });
+    throw new AppError(
+      `Já existe uma conversa aberta com este número neste quadro${
+        dono?.name ? `, em atendimento por ${dono.name}` : ""
+      }.`,
+      400
+    );
   }
 
   ticket = await Ticket.create({
