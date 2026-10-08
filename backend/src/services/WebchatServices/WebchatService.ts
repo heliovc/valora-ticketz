@@ -10,6 +10,7 @@ import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateConta
 import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot";
+import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { logger } from "../../utils/logger";
@@ -198,7 +199,12 @@ export async function handleVisitorMessage(
   const out: WebchatMessageDTO[] = [toDTO(visitorMsg)];
 
   // Bot só responde se: ligado + chave central presente + ticket sem atendente humano.
-  const botEnabled = (await GetCompanySetting(companyId, "aiBotEnabled", "disabled")) === "enabled";
+  // A decisão DESTA conversa vence a da empresa, igual ao WhatsApp: o botão do
+  // card tem de valer no widget também, senão desligar o bot num atendimento
+  // silencia um canal e deixa o outro respondendo por cima do humano.
+  const daEmpresa =
+    (await GetCompanySetting(companyId, "aiBotEnabled", "disabled")) === "enabled";
+  const botEnabled = botDeveResponder(ticket.aiBotEnabled, daEmpresa);
   if (botEnabled && isAiBotAvailable() && !ticket.userId) {
     try {
       const persona = await GetCompanySetting(companyId, "aiBotPersona", "");

@@ -31,6 +31,15 @@ ticketRoutes.put(
   TicketController.update
 );
 
+// Chave do bot de IA nesta conversa. Rota própria: o PUT acima transfere fila
+// e dispara chatbot, e ligar o bot não pode arrastar nada disso junto.
+ticketRoutes.put(
+  "/tickets/:ticketId/ai-bot",
+  isAuth,
+  isCompliant,
+  TicketController.updateAiBot
+);
+
 ticketRoutes.delete(
   "/tickets/:ticketId",
   isAuth,

@@ -182,7 +182,28 @@ type ContextoDaConversa = {
   jaConversou: boolean;
   /** Produto/objetivo desta conversa, configurado na lista. */
   foco?: string;
+  /**
+   * O que a empresa mandou ANTES de o cliente falar (ex.: modelo do disparo).
+   * Vazio = foi o cliente quem começou.
+   */
+  abertura?: string;
 };
+
+/**
+ * Falas nossas antes da primeira fala do cliente: a conversa foi iniciada pela
+ * empresa (disparo, modelo, nova conversa). Elas saem dos turnos — os
+ * provedores exigem que a conversa abra pelo cliente — e por isso precisam
+ * chegar ao bot pelo prompt; sem isso o bot recebia "Quero saber mais" sem
+ * saber a que o cliente respondia, e agradecia "pelo contato".
+ */
+export function aberturaDaEmpresa(history: BotTurn[]): string {
+  const abertura: string[] = [];
+  for (const turno of history) {
+    if (turno.role !== "assistant") break;
+    if (turno.text && turno.text.trim()) abertura.push(turno.text.trim());
+  }
+  return abertura.join("\n\n");
+}
 
 export function buildSystemPrompt(
   persona: string,
@@ -215,6 +236,19 @@ export function buildSystemPrompt(
       .filter(Boolean)
       .join("\n")
   );
+  if (contexto.abertura && contexto.abertura.trim()) {
+    parts.push(
+      [
+        "Esta conversa foi INICIADA PELA EMPRESA. A empresa enviou esta mensagem ao cliente, e o cliente está respondendo a ela:",
+        "<<<",
+        contexto.abertura.trim().slice(0, 2000),
+        ">>>",
+        "- NÃO agradeça pelo contato e NÃO diga que o cliente procurou a empresa: foi a empresa que procurou o cliente.",
+        "- NÃO se apresente de novo nem repita o cumprimento: a mensagem acima já apresentou a empresa.",
+        "- Continue a partir do que foi enviado, respondendo ao que o cliente disse (ex.: se ele escolheu um botão como \"Quero saber mais\", siga direto para isso)."
+      ].join("\n")
+    );
+  }
   if (contexto.foco && contexto.foco.trim()) {
     parts.push(
       [
@@ -394,7 +428,8 @@ export const generateBotReply = async (
       contactName: params.contactName,
       agora: params.agora || new Date(),
       jaConversou: jaSeApresentou(params.history),
-      foco: params.foco
+      foco: params.foco,
+      abertura: aberturaDaEmpresa(params.history)
     }
   );
   const turns = buildTurns(params);

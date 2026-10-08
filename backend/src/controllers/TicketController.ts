@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Mutex } from "async-mutex";
 import { getIO } from "../libs/socket";
 import Ticket from "../models/Ticket";
+import AppError from "../errors/AppError";
 
 import CreateTicketService from "../services/TicketServices/CreateTicketService";
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
@@ -9,6 +10,7 @@ import ListTicketsService from "../services/TicketServices/ListTicketsService";
 import ShowTicketUUIDService from "../services/TicketServices/ShowTicketFromUUIDService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
+import UpdateTicketAiBotService from "../services/TicketServices/UpdateTicketAiBotService";
 import ListTicketsServiceKanban from "../services/TicketServices/ListTicketsServiceKanban";
 
 type IndexQuery = {
@@ -242,4 +244,31 @@ export const remove = async (
     });
 
   return res.status(200).json({ message: "ticket deleted" });
+};
+
+/**
+ * Liga/desliga o bot de IA nesta conversa.
+ *
+ * `enabled: null` devolve a conversa ao padrão da empresa. Aceitar só
+ * `true`/`false` faria o terceiro estado virar um valor inventado no front.
+ */
+export const updateAiBot = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { ticketId } = req.params;
+  const { companyId } = req.user;
+  const { enabled } = req.body as { enabled?: boolean | null };
+
+  if (enabled !== null && typeof enabled !== "boolean") {
+    throw new AppError("ERR_AI_BOT_STATE_INVALID", 400);
+  }
+
+  const ticket = await UpdateTicketAiBotService(
+    Number.parseInt(ticketId, 10),
+    companyId,
+    enabled
+  );
+
+  return res.status(200).json(ticket);
 };
