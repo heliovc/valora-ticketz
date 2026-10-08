@@ -90,6 +90,11 @@ export async function importarParaLista(
         number: { [Op.in]: brNumberVariants(destinatario.number) }
       }
     });
+    if (contato && destinatario.name && /^\d+$/.test(contato.name || "")) {
+      // Contato que só tinha o número como nome ganha o nome da planilha.
+      // eslint-disable-next-line no-await-in-loop
+      await contato.update({ name: destinatario.name });
+    }
     if (!contato) {
       // eslint-disable-next-line no-await-in-loop
       contato = await Contact.create({

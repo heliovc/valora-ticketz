@@ -58,7 +58,22 @@ export function lerDestinatarios(texto: string): {
   for (const linhaBruta of String(texto || "").split(/\r?\n/)) {
     const linha = linhaBruta.trim();
     if (!linha) continue;
-    const partes = linha.split(/[;,\t]/).map(p => p.trim()).filter(Boolean);
+    // Separadores de coluna: ; , tab. Sem nenhum ("Mariana 21 98655-6494"), o
+    // telefone é recortado do meio do texto e o resto vira o nome — antes a
+    // linha inteira virava número e o nome se perdia.
+    let partes = linha.split(/[;,\t]/).map(p => p.trim()).filter(Boolean);
+    if (partes.length === 1) {
+      // Primeiro o formato brasileiro (DDD + 8/9 dígitos), para que um número
+      // no nome ("Rei da Praia 199") não seja engolido junto; depois qualquer
+      // sequência longa de dígitos (DDI estrangeiro).
+      const fone =
+        /(?<=^|\s)(?:\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}(?=\s|$)/.exec(partes[0]) ||
+        /\+?\(?\d[\d\s().-]{6,}\d/.exec(partes[0]);
+      if (fone && /[A-Za-zÀ-ÿ@]/.test(partes[0].replace(fone[0], ""))) {
+        const resto = partes[0].replace(fone[0], " ").replace(/\s+/g, " ").trim();
+        partes = [resto, fone[0].trim()];
+      }
+    }
     const indiceNumero = partes.findIndex(p => p.replace(/\D/g, "").length >= 8);
     if (indiceNumero < 0) {
       invalidos.push(linha);
