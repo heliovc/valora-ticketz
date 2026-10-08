@@ -66,6 +66,7 @@ import { generateBotReply, isAiBotAvailable } from "../../helpers/aiBot";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
+import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -1648,6 +1649,7 @@ const responderRajadaComBot = async (
       }
     }
     if (depois) await SendWhatsAppMessage({ body: depois, ticket });
+    if (reply.kind === "handoff" && !reply.falha) await passarParaHumano(ticket.id, ticket.companyId);
   } catch (err) {
     Sentry.captureException(err);
     logger.error({ err, ticketId }, "[aiBot] falha ao responder a rajada");

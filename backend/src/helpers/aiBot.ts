@@ -90,6 +90,12 @@ export type BotReply = {
   /** `reply`: resposta do bot. `handoff`: avisa e passa para humano. */
   kind: "reply" | "handoff";
   text: string;
+  /**
+   * Handoff por FALHA do provedor (cota, rede, chave) — não foi decisão da
+   * conversa. Nesse caso o bot não é desligado no card: a próxima mensagem
+   * tenta de novo.
+   */
+  falha?: boolean;
 };
 
 export type GenerateBotReplyParams = {
@@ -451,6 +457,6 @@ export const generateBotReply = async (
     // do zero — foi o que aconteceu quando o crédito da Anthropic acabou.
     const detalhe = axios.isAxiosError(err) ? err.response?.data : undefined;
     logger.error({ err, provider, detalhe }, "[aiBot] falha ao gerar resposta do bot");
-    return { kind: "handoff", text: HANDOFF_MESSAGE };
+    return { kind: "handoff", text: HANDOFF_MESSAGE, falha: true };
   }
 };

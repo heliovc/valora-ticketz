@@ -13,6 +13,7 @@ import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
+import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -251,6 +252,7 @@ export async function handleVisitorMessage(
         });
         out.push(toDTO(botMsg));
       }
+      if (reply?.kind === "handoff" && !reply.falha) await passarParaHumano(ticket.id, companyId);
     } catch (err) {
       logger.error({ err }, "webchat: falha ao gerar resposta do bot");
     }

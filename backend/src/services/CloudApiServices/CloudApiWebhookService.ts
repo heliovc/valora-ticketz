@@ -15,6 +15,7 @@ import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateConta
 import { FindOrCreateTicketServiceMetaComEstado } from "../TicketServices/FindOrCreateTicketServiceMeta";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
+import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -354,6 +355,7 @@ async function responderComBot(
       });
     }
     if (depois) await enviarTexto(depois);
+    if (resposta.kind === "handoff" && !resposta.falha) await passarParaHumano(ticket.id, companyId);
   } catch (err: any) {
     // Bot que falha deixa a conversa para o humano — nunca derruba o webhook.
     Sentry.captureException(err);
