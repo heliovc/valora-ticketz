@@ -66,6 +66,11 @@ import { generateBotReply, isAiBotAvailable } from "../../helpers/aiBot";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
+import {
+  AVISO_ACIMA_DO_SIMPLES,
+  extrairPedidoDeSimulacao,
+  prepararSimulacao
+} from "../AiBotServices/SimulacaoNoBot";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { parseToMilliseconds } from "../../helpers/parseToMilliseconds";
@@ -1626,8 +1631,23 @@ const responderRajadaComBot = async (
     if (!reply) return;
 
     // No handoff o cliente recebe a mensagem de espera e o ticket fica para o
-    // humano.
-    await SendWhatsAppMessage({ body: reply.text, ticket });
+    // humano. Pedido de simulação no meio da resposta vira imagem.
+    const { antes, depois, pedido } = extrairPedidoDeSimulacao(reply.text);
+    if (antes) await SendWhatsAppMessage({ body: antes, ticket });
+    if (pedido) {
+      const pronta = await prepararSimulacao(ticket.companyId, ticket.id, pedido);
+      if (pronta) {
+        // O eco do Baileys grava a mensagem com a imagem na conversa.
+        const wbotDoTicket = await GetTicketWbot(ticket);
+        await wbotDoTicket.sendMessage(getJidOf(ticket), {
+          image: pronta.imagem,
+          caption: pronta.legenda
+        });
+      } else {
+        await SendWhatsAppMessage({ body: AVISO_ACIMA_DO_SIMPLES, ticket });
+      }
+    }
+    if (depois) await SendWhatsAppMessage({ body: depois, ticket });
   } catch (err) {
     Sentry.captureException(err);
     logger.error({ err, ticketId }, "[aiBot] falha ao responder a rajada");

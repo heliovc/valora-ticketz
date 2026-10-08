@@ -13,6 +13,11 @@ import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
+import {
+  AVISO_ACIMA_DO_SIMPLES,
+  extrairPedidoDeSimulacao,
+  prepararSimulacao
+} from "../AiBotServices/SimulacaoNoBot";
 import { logger } from "../../utils/logger";
 
 /**
@@ -220,13 +225,24 @@ export async function handleVisitorMessage(
         files,
         foco
       });
-      if (reply && reply.text.trim()) {
+      // No Chat do Site a simulação sai como texto (o widget não mostra imagem).
+      const { texto: textoDoBot, pedido } = reply
+        ? extrairPedidoDeSimulacao(reply.text.trim())
+        : { texto: "", pedido: null };
+      let corpo = textoDoBot;
+      if (pedido) {
+        const pronta = await prepararSimulacao(companyId, ticket.id, pedido);
+        corpo = [textoDoBot, pronta ? pronta.legenda : AVISO_ACIMA_DO_SIMPLES]
+          .filter(Boolean)
+          .join("\n\n");
+      }
+      if (corpo) {
         const botMsg = await CreateMessageService({
           messageData: {
             id: randomUUID(),
             ticketId: ticket.id,
             contactId: contact.id,
-            body: reply.text.trim(),
+            body: corpo,
             fromMe: true,
             read: true,
             channel: CHANNEL

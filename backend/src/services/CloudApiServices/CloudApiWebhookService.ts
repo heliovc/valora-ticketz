@@ -16,6 +16,11 @@ import { FindOrCreateTicketServiceMetaComEstado } from "../TicketServices/FindOr
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import {
+  AVISO_ACIMA_DO_SIMPLES,
+  extrairPedidoDeSimulacao,
+  prepararSimulacao
+} from "../AiBotServices/SimulacaoNoBot";
+import {
   atualizarPorStatus,
   ultimoDisparoRecebido
 } from "./CloudApiBroadcastService";
@@ -25,7 +30,7 @@ import {
   numberWhereClause,
   resolveConnectionByPhoneNumberId
 } from "./CloudApiChannel";
-import { sendText } from "./CloudApiSendService";
+import { sendImage, sendText } from "./CloudApiSendService";
 import { extrairAtribuicao } from "../../helpers/adReferral";
 
 /**
@@ -308,21 +313,47 @@ async function responderComBot(
 
     if (!resposta || !resposta.text.trim()) return;
 
-    const texto = resposta.text.trim();
-    const { wamid } = await sendText(whatsapp, contact.number, texto);
-    await CreateMessageService({
-      messageData: {
-        id: wamid,
-        ticketId: ticket.id,
-        contactId: contact.id,
-        body: texto,
-        fromMe: true,
-        read: true,
-        ack: 1,
-        channel: CHANNEL
-      },
-      companyId
-    });
+    // O bot pode pedir a simulação de taxas no meio da resposta: o marcador sai
+    // do texto e a imagem é gerada e enviada aqui, com os números da conta.
+    const { antes, depois, pedido } = extrairPedidoDeSimulacao(resposta.text.trim());
+    const enviarTexto = async (corpo: string) => {
+      const { wamid } = await sendText(whatsapp, contact.number, corpo);
+      await CreateMessageService({
+        messageData: {
+          id: wamid,
+          ticketId: ticket.id,
+          contactId: contact.id,
+          body: corpo,
+          fromMe: true,
+          read: true,
+          ack: 1,
+          channel: CHANNEL
+        },
+        companyId
+      });
+    };
+    if (antes) await enviarTexto(antes);
+    if (pedido) {
+      const pronta = await prepararSimulacao(companyId, ticket.id, pedido);
+      const enviado = pronta
+        ? await sendImage(whatsapp, contact.number, pronta.imagem, pronta.legenda)
+        : await sendText(whatsapp, contact.number, AVISO_ACIMA_DO_SIMPLES);
+      await CreateMessageService({
+        messageData: {
+          id: enviado.wamid,
+          ticketId: ticket.id,
+          contactId: contact.id,
+          body: pronta ? pronta.legenda : AVISO_ACIMA_DO_SIMPLES,
+          fromMe: true,
+          read: true,
+          ack: 1,
+          channel: CHANNEL,
+          ...(pronta ? { mediaType: "image", mediaUrl: pronta.arquivo } : {})
+        },
+        companyId
+      });
+    }
+    if (depois) await enviarTexto(depois);
   } catch (err: any) {
     // Bot que falha deixa a conversa para o humano — nunca derruba o webhook.
     Sentry.captureException(err);

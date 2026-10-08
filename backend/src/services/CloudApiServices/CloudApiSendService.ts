@@ -145,6 +145,45 @@ export async function sendTemplate(
 }
 
 /**
+ * Imagem com legenda. Sobe o arquivo para a Meta antes (endpoint `media`) —
+ * assim não precisa de URL pública, e a imagem da simulação de um cliente não
+ * fica exposta num endereço aberto.
+ */
+export async function sendImage(
+  whatsapp: Whatsapp,
+  to: string,
+  imagem: Buffer,
+  legenda: string
+): Promise<EnvioResultado> {
+  const token = getToken(whatsapp);
+  let mediaId: string;
+  try {
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", "image/jpeg");
+    form.append("file", new Blob([new Uint8Array(imagem)], { type: "image/jpeg" }), "simulacao.jpg");
+    const { data } = await axios.post(
+      graphUrl(`${whatsapp.cloudApiPhoneNumberId}/media`),
+      form,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
+    );
+    mediaId = data?.id;
+    if (!mediaId) throw new Error("a Meta não devolveu o id da mídia");
+  } catch (err: any) {
+    logger.error(
+      { status: err?.response?.status, data: err?.response?.data },
+      "CloudApi: falha ao subir imagem"
+    );
+    throw new AppError(traduzErro(err), 400);
+  }
+  return postMessage(whatsapp, {
+    to: (to || "").replace(/\D/g, ""),
+    type: "image",
+    image: { id: mediaId, caption: legenda.slice(0, 1024) }
+  });
+}
+
+/**
  * Marca como lida no celular do cliente (os dois tiques azuis do lado dele).
  * Falha aqui é cosmética — nunca deve derrubar o atendimento.
  */
