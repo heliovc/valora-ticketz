@@ -78,22 +78,31 @@ export function lerDestinatarios(texto: string): {
     if (variantes.some(v => vistos.has(v)) || vistos.has(numero)) continue;
     variantes.forEach(v => vistos.add(v));
     vistos.add(numero);
-    const nome = partes.filter((_p, i) => i !== indiceNumero).join(" ").trim();
+    // O nome é a primeira coluna que não é o número — numa planilha colada
+    // ("Empresa, Nicho, Contato") é a empresa, não "Empresa Nicho".
+    const nome = (partes.find((_p, i) => i !== indiceNumero) || "").trim();
     validos.push({ number: numero, name: nome || null });
   }
   return { validos, invalidos };
 }
 
-/** Parâmetros do destinatário: `{{nome}}` vira o nome (ou "cliente"). */
-function parametrosPara(params: string[], destinatario: Destinatario): string[] {
-  const primeiroNome = (destinatario.name || "").split(/\s+/)[0] || "cliente";
+/**
+ * Variáveis por contato: `{{nome}}` vira o primeiro nome e `{{nome_completo}}`
+ * o nome inteiro (sem nome, "cliente"). Usado no disparo e na automação.
+ */
+export function parametrosDoContato(params: string[], nome: string | null): string[] {
+  const primeiroNome = (nome || "").split(/\s+/)[0] || "cliente";
   return params.map(p =>
     limparParametro(
       String(p ?? "")
         .replace(/\{\{\s*nome\s*\}\}/gi, primeiroNome)
-        .replace(/\{\{\s*nome_completo\s*\}\}/gi, destinatario.name || "cliente")
+        .replace(/\{\{\s*nome_completo\s*\}\}/gi, nome || "cliente")
     )
   );
+}
+
+function parametrosPara(params: string[], destinatario: Destinatario): string[] {
+  return parametrosDoContato(params, destinatario.name);
 }
 
 export interface NovoDisparo {

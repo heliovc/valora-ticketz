@@ -20,7 +20,10 @@ import {
 
 export const templates = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;
-  return res.json(await listarModelos(companyId, req.query.whatsappId as string));
+  // A tela pede o status de agora; o envio pode usar a lista de 1 minuto atrás.
+  return res.json(
+    await listarModelos(companyId, req.query.whatsappId as string, req.query.fresco === "1")
+  );
 };
 
 export const createTemplate = async (

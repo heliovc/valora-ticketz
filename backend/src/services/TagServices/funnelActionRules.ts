@@ -20,7 +20,12 @@ export type TipoDeAcao =
    * não sabe enviar e-mail, e duplicar essa configuração criaria dois lugares
    * para quebrar. Quem envia é a Valora, avisada por este executor.
    */
-  | "email";
+  | "email"
+  /**
+   * Envia um modelo aprovado pelo WhatsApp Oficial — o único jeito de escrever
+   * para quem nunca falou com a empresa (ex.: lead importado em lote).
+   */
+  | "modelo";
 
 export interface AcaoDoFunil {
   id: number;
@@ -49,7 +54,8 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
   "mensagem",
   "bot_ligar",
   "bot_desligar",
-  "email"
+  "email",
+  "modelo"
 ];
 
 /**
@@ -70,7 +76,7 @@ export function ehAcaoSilenciosa(tipo: string): boolean {
  * é o tipo de automação que a pessoa desliga no dia seguinte.
  */
 export function respeitaExpedienteSeConfigurado(tipo: string): boolean {
-  return tipo === "mensagem" || tipo === "email";
+  return tipo === "mensagem" || tipo === "email" || tipo === "modelo";
 }
 
 export function decidirAgendamento(

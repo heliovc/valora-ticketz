@@ -1,12 +1,16 @@
 import express from "express";
 import isAuth from "../middleware/isAuth";
 import * as FunnelActionController from "../controllers/FunnelActionController";
+import * as FunnelImportController from "../controllers/FunnelImportController";
 
 /**
  * Automações do funil. `:tagId` aceita o id de uma lista ou a palavra
  * `entrada`, que é a automação de conversa nova (sem lista).
  */
 const funnelActionRoutes = express.Router();
+
+// Sobe contatos em lote para uma lista (cada número vira um card).
+funnelActionRoutes.post("/funnel-import", isAuth, FunnelImportController.importar);
 
 funnelActionRoutes.get(
   // Antes da rota com `:tagId`, pelo mesmo motivo do "resumo".

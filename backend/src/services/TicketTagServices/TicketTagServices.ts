@@ -2,6 +2,7 @@ import AppError from "../../errors/AppError";
 import Tag from "../../models/Tag";
 import Ticket from "../../models/Ticket";
 import TicketTag from "../../models/TicketTag";
+import Whatsapp from "../../models/Whatsapp";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import { websocketUpdateTicket } from "../TicketServices/UpdateTicketService";
 import {
@@ -30,6 +31,22 @@ export async function ticketTagAdd(
 
   if (ticket.companyId !== tag.companyId) {
     throw new AppError("ERR_NOT_FOUND", 404);
+  }
+
+  // Lista só recebe card do próprio quadro: num quadro alheio o card sumiria
+  // do dele e a automação da lista falaria pela conexão errada. Etiqueta livre
+  // (kanban 0) não é lista e vale em qualquer card.
+  if (tag.kanban === 1) {
+    const conexao = ticket.whatsappId
+      ? await Whatsapp.findOne({
+          where: { id: ticket.whatsappId, companyId: ticket.companyId },
+          attributes: ["id", "ownBoard"]
+        })
+      : null;
+    const quadroDoCard = conexao?.ownBoard ? conexao.id : null;
+    if ((tag.whatsappId ?? null) !== quadroDoCard) {
+      throw new AppError("Esta lista é de outro quadro.", 400);
+    }
   }
 
   const ticketTag = await TicketTag.create({

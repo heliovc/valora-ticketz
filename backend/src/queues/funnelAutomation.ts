@@ -14,6 +14,8 @@ import { SendMessage } from "../helpers/SendMessage";
 import { isBaileys, isOficial } from "../helpers/channelTraits";
 import SendChannelMessage from "../services/ChannelServices/SendChannelMessage";
 import { dentroDaJanela } from "../services/CloudApiServices/CloudApiSendService";
+import { enviarModeloNaConversa } from "../services/CloudApiServices/CloudApiTemplateService";
+import { parametrosDoContato } from "../services/CloudApiServices/CloudApiBroadcastService";
 import formatBody from "../helpers/Mustache";
 import { checkOpenHours } from "../helpers/checkOpenHours";
 import { logger } from "../utils/logger";
@@ -269,6 +271,33 @@ async function executar(
         enviado
           ? ({ sentAt: new Date() } as any)
           : ({ skippedReason: "Valora não conseguiu enviar o e-mail" } as any)
+      );
+      return;
+    }
+
+    if (acao.tipo === "modelo") {
+      // Modelo aprovado pelo WhatsApp Oficial: não depende da janela de 24h —
+      // é o caminho para o primeiro contato com um lead importado.
+      if (!isOficial(ticket.channel)) {
+        await run.update({
+          skippedReason: "modelo só existe em conversa do WhatsApp Oficial"
+        } as any);
+        return;
+      }
+      const config = (acao.config || {}) as Record<string, unknown>;
+      await enviarModeloNaConversa(
+        run.companyId,
+        ticket.id,
+        String(config.templateName || ""),
+        String(config.language || ""),
+        parametrosDoContato(
+          Array.isArray(config.params) ? (config.params as string[]) : [],
+          ticket.contact?.name || null
+        )
+      );
+      await run.update({ sentAt: new Date() } as any);
+      logger.info(
+        `[funnel] modelo ${config.templateName} enviado ticket=${ticket.id} acao=${acao.id}`
       );
       return;
     }

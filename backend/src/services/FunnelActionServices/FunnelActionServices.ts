@@ -134,6 +134,13 @@ function validar(dados: DadosDaAcao): void {
     // entenderia por quê.
     if (!texto) throw new AppError("ERR_FUNNEL_ACTION_EMPTY_MESSAGE", 400);
   }
+  if (dados.tipo === "modelo") {
+    const nome = String(dados.config?.templateName ?? "").trim();
+    if (!nome) throw new AppError("Escolha o modelo que será enviado.", 400);
+    if (dados.config?.params && !Array.isArray(dados.config.params)) {
+      throw new AppError("Variáveis do modelo inválidas.", 400);
+    }
+  }
   const atraso = dados.atrasoMinutos ?? 0;
   if (atraso < 0 || atraso > MAX_ATRASO_MINUTOS) {
     throw new AppError("ERR_FUNNEL_ACTION_DELAY", 400);

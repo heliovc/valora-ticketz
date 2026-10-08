@@ -102,12 +102,25 @@ function normalizar(bruto: any): Modelo {
   };
 }
 
+/**
+ * Lista recente por conexão. Uma automação que envia para 100 cards perguntaria
+ * à Meta 100 vezes pela mesma lista; um minuto de memória basta, e a tela de
+ * Modelos pede `fresco` para mostrar o status de agora.
+ */
+const CACHE_MS = 60 * 1000;
+const cache = new Map<number, { em: number; modelos: Modelo[] }>();
+
 /** Todos os modelos da conta, com o status de aprovação atual. */
 export async function listarModelos(
   companyId: number,
-  whatsappId?: number | string | null
+  whatsappId?: number | string | null,
+  fresco = false
 ): Promise<Modelo[]> {
   const conexao = await conexaoOficialDaEmpresa(companyId, whatsappId);
+  const guardado = cache.get(conexao.id);
+  if (!fresco && guardado && Date.now() - guardado.em < CACHE_MS) {
+    return guardado.modelos;
+  }
   const token = getToken(conexao);
   const modelos: Modelo[] = [];
   let url: string | null = graphUrl(`${conexao.cloudApiWabaId}/message_templates`);
@@ -131,7 +144,9 @@ export async function listarModelos(
   } catch (err) {
     throw erroDaMeta(err, "A Meta não devolveu os modelos");
   }
-  return modelos.sort((a, b) => a.name.localeCompare(b.name));
+  modelos.sort((a, b) => a.name.localeCompare(b.name));
+  cache.set(conexao.id, { em: Date.now(), modelos });
+  return modelos;
 }
 
 export interface NovoModelo {
@@ -244,6 +259,7 @@ export async function criarModelo(
       },
       { headers: { Authorization: `Bearer ${getToken(conexao)}` }, timeout: 20000 }
     );
+    cache.delete(conexao.id);
     return { id: data?.id, status: data?.status, name };
   } catch (err) {
     throw erroDaMeta(err, "A Meta recusou o modelo");
@@ -263,6 +279,7 @@ export async function apagarModelo(
       headers: { Authorization: `Bearer ${getToken(conexao)}` },
       timeout: 20000
     });
+    cache.delete(conexao.id);
   } catch (err) {
     throw erroDaMeta(err, "A Meta não apagou o modelo");
   }
