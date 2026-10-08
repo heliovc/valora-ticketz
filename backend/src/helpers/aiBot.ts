@@ -107,6 +107,11 @@ export type GenerateBotReplyParams = {
   files?: BotFile[];
   /** Momento da resposta; só os testes passam outro. */
   agora?: Date;
+  /**
+   * Foco desta conversa (produto/objetivo da lista em que o card está), vindo
+   * da configuração da ação "Ligar o Bot de IA". Vazio = sem foco.
+   */
+  foco?: string;
 };
 
 let client: Anthropic | null = null;
@@ -175,6 +180,8 @@ type ContextoDaConversa = {
   agora: Date;
   /** Já houve fala nossa na conversa — não cumprimentar de novo. */
   jaConversou: boolean;
+  /** Produto/objetivo desta conversa, configurado na lista. */
+  foco?: string;
 };
 
 export function buildSystemPrompt(
@@ -208,6 +215,16 @@ export function buildSystemPrompt(
       .filter(Boolean)
       .join("\n")
   );
+  if (contexto.foco && contexto.foco.trim()) {
+    parts.push(
+      [
+        "Foco desta conversa (configurado pela empresa para esta etapa do funil):",
+        contexto.foco.trim(),
+        "- Concentre a conversa nisso e ofereça só isso, a não ser que o cliente pergunte por outra coisa.",
+        "- Preços, condições e regras continuam vindo SOMENTE da base de conhecimento abaixo."
+      ].join("\n")
+    );
+  }
   if (knowledge && knowledge.trim()) {
     parts.push(`Base de conhecimento:\n${knowledge.trim()}`);
   }
@@ -376,7 +393,8 @@ export const generateBotReply = async (
     {
       contactName: params.contactName,
       agora: params.agora || new Date(),
-      jaConversou: jaSeApresentou(params.history)
+      jaConversou: jaSeApresentou(params.history),
+      foco: params.foco
     }
   );
   const turns = buildTurns(params);

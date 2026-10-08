@@ -65,6 +65,7 @@ import { transcriber } from "../../helpers/transcriber";
 import { generateBotReply, isAiBotAvailable } from "../../helpers/aiBot";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
+import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { parseToMilliseconds } from "../../helpers/parseToMilliseconds";
@@ -1609,6 +1610,7 @@ const responderRajadaComBot = async (
       ""
     );
     const files = await ListAiBotFileTextsService(ticket.companyId);
+    const foco = await focoDoBot(ticket.id, ticket.companyId);
 
     const reply = await generateBotReply({
       persona,
@@ -1616,7 +1618,8 @@ const responderRajadaComBot = async (
       history,
       userMessage: pendente,
       contactName: contact.name,
-      files
+      files,
+      foco
     });
 
     // Chave central ausente: erro de implantação, ninguém responde.

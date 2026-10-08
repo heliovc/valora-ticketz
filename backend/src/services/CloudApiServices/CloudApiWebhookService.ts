@@ -14,6 +14,7 @@ import { botDeveResponder } from "../TagServices/funnelActionRules";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
 import { FindOrCreateTicketServiceMetaComEstado } from "../TicketServices/FindOrCreateTicketServiceMeta";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
+import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import {
   atualizarPorStatus,
   ultimoDisparoRecebido
@@ -294,13 +295,15 @@ async function responderComBot(
     const persona = await GetCompanySetting(companyId, "aiBotPersona", "");
     const knowledge = await GetCompanySetting(companyId, "aiBotKnowledge", "");
     const files = await ListAiBotFileTextsService(companyId);
+    const foco = await focoDoBot(ticketId, companyId);
     const resposta = await generateBotReply({
       persona,
       knowledge,
       history,
       userMessage: pendente,
       contactName: contact.name,
-      files
+      files,
+      foco
     });
 
     if (!resposta || !resposta.text.trim()) return;

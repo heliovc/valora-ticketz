@@ -11,6 +11,7 @@ import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketS
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
+import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { logger } from "../../utils/logger";
 
 /**
@@ -203,13 +204,15 @@ export async function handleVisitorMessage(
       const persona = await GetCompanySetting(companyId, "aiBotPersona", "");
       const knowledge = await GetCompanySetting(companyId, "aiBotKnowledge", "");
       const files = await ListAiBotFileTextsService(companyId);
+      const foco = await focoDoBot(ticket.id, companyId);
       const reply = await generateBotReply({
         persona,
         knowledge,
         history,
         userMessage: body,
         contactName: undefined,
-        files
+        files,
+        foco
       });
       if (reply && reply.text.trim()) {
         const botMsg = await CreateMessageService({

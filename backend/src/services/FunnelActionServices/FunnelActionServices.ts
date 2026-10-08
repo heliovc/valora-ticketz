@@ -134,6 +134,12 @@ function validar(dados: DadosDaAcao): void {
     // entenderia por quê.
     if (!texto) throw new AppError("ERR_FUNNEL_ACTION_EMPTY_MESSAGE", 400);
   }
+  if (dados.tipo === "bot_ligar") {
+    const instrucao = String(dados.config?.instrucao ?? "");
+    if (instrucao.length > 2000) {
+      throw new AppError("A instrução do bot passa de 2000 caracteres.", 400);
+    }
+  }
   if (dados.tipo === "modelo") {
     const nome = String(dados.config?.templateName ?? "").trim();
     if (!nome) throw new AppError("Escolha o modelo que será enviado.", 400);
