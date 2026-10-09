@@ -153,14 +153,26 @@ export const update = async (
     throw new AppError(err.message);
   }
 
+  const { contactId } = req.params;
+
+  // A conferência no WhatsApp só faz sentido quando o NÚMERO muda: exige o
+  // WhatsApp por QR conectado, e sem ela conta só com o canal Oficial (ou com
+  // a sessão caída) não conseguia salvar nem o nome nem os dados do contato.
+  const atual = await Contact.findOne({
+    where: { id: contactId, companyId },
+    attributes: ["number"]
+  });
+  const numeroMudou =
+    !atual ||
+    String(atual.number || "").replace(/\D/g, "") !==
+      String(contactData.number || "").replace(/\D/g, "");
+
   let checked: IOnWhatsapp;
-  if (!contactData.isGroup && contactData.number.match(/^\d+$/)) {
+  if (numeroMudou && !contactData.isGroup && contactData.number.match(/^\d+$/)) {
     checked = await CheckContactNumber(contactData.number, companyId);
     const number = checked.jid.replace(/\D/g, "");
     contactData.number = number;
   }
-
-  const { contactId } = req.params;
 
   const contact = await UpdateContactService({
     contactData,

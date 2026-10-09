@@ -104,22 +104,36 @@ export async function contextoDeAcoes(ticketId: number, companyId: number): Prom
     ContactCustomField.findAll({ where: { contactId: ticket.contactId } })
   ]);
   const partes: string[] = [];
+  if (listas.length || campos.length) partes.push(
+    "Você executa ações escrevendo COMANDOS em linhas separadas da sua resposta. O sistema executa e apaga o comando antes de enviar — o cliente nunca vê. Escreva o comando NA MESMA resposta em que a situação acontece, junto com o texto normal para o cliente."
+  );
   if (listas.length) {
     partes.push(
       [
-        "Listas (etapas) deste funil: " + listas.map(l => `"${l.name}"`).join(", ") + ".",
-        'Para mover a conversa para uma lista, escreva numa linha sozinha: [[MOVER lista="Nome exato da lista"]]',
-        "Só mova quando a Personalidade mandar. O cliente não vê esse comando."
+        "MOVER — listas (etapas) deste funil: " + listas.map(l => `"${l.name}"`).join(", ") + ".",
+        'Comando: [[MOVER lista="Nome exato da lista"]]',
+        "Use sempre que uma regra da Personalidade disser para mover (ex.: cliente aceitou a proposta, quer contratar)."
       ].join("\n")
     );
   }
   if (campos.length) {
     partes.push(
       [
-        "Dados a coletar deste cliente (salve assim que ele informar, sem pedir confirmação):",
+        "SALVAR — dados a guardar no cadastro deste cliente:",
         ...campos.map(c => `- ${c.nome}${c.descricao ? `: ${c.descricao}` : ""}`),
-        'Para salvar, escreva numa linha sozinha: [[SALVAR campo="Nome do campo" valor="o que o cliente informou"]]',
-        "Um comando por dado. O cliente não vê esse comando."
+        'Comando: [[SALVAR campo="Nome do campo" valor="o que o cliente informou"]]',
+        "OBRIGATÓRIO: toda vez que o cliente informar um desses dados, escreva um comando SALVAR para cada dado, na mesma resposta, sem pedir confirmação."
+      ].join("\n")
+    );
+  }
+  if (listas.length || campos.length) {
+    partes.push(
+      [
+        "Exemplo — cliente: \"Quero contratar, meu CNPJ é 12.345.678/0001-90\". Sua resposta:",
+        "Que ótimo! Não temos custo de adesão nem fidelidade. Vou te passar o link do cadastro.",
+        '[[SALVAR campo="CNPJ" valor="12.345.678/0001-90"]]',
+        '[[MOVER lista="Fechamento"]]',
+        "(o exemplo usa nomes ilustrativos — use os campos e listas desta conta)"
       ].join("\n")
     );
   }
