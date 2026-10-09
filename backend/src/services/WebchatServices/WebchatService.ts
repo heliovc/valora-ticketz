@@ -15,6 +15,7 @@ import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
+import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -227,12 +228,17 @@ export async function handleVisitorMessage(
         contactName: undefined,
         files,
         foco,
+        acoes: await contextoDeAcoes(ticket.id, companyId),
         provedores
       });
       // No Chat do Site a simulação sai como texto (o widget não mostra imagem).
-      const { texto: textoDoBot, pedido } = reply
-        ? extrairPedidoDeSimulacao(reply.text.trim())
+      const semAcoes = reply
+        ? await executarAcoesDoBot(ticket.id, companyId, reply.text.trim())
+        : "";
+      const { texto: comMarcadores, pedido } = semAcoes
+        ? extrairPedidoDeSimulacao(semAcoes)
         : { texto: "", pedido: null };
+      const textoDoBot = limparMarcadores(comMarcadores);
       let corpo = textoDoBot;
       if (pedido) {
         const pronta = await prepararSimulacao(companyId, ticket.id, pedido);

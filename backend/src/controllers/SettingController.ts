@@ -12,7 +12,7 @@ import { GetSettingService } from "../services/SettingServices/GetSettingService
  * Configurações que só passam pelas rotas próprias: as chaves dos modelos de IA
  * (`/ai-bot/providers`) não podem ser lidas nem sobrescritas pela rota genérica.
  */
-const RESERVADAS = ["aiBotProviders"];
+const RESERVADAS = ["aiBotProviders", "aiBotFields"];
 
 type LogoRequest = {
   mode: string;

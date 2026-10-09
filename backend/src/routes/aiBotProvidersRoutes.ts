@@ -15,4 +15,7 @@ aiBotProvidersRoutes.post(
   AiBotProvidersController.test
 );
 
+aiBotProvidersRoutes.get("/ai-bot/fields", isAuth, isAdmin, AiBotProvidersController.fields);
+aiBotProvidersRoutes.put("/ai-bot/fields", isAuth, isAdmin, AiBotProvidersController.updateFields);
+
 export default aiBotProvidersRoutes;

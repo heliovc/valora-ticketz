@@ -118,6 +118,11 @@ export type GenerateBotReplyParams = {
    */
   foco?: string;
   /**
+   * Listas do funil, dados a coletar e dados já salvos do contato — o que o
+   * bot precisa para usar [[MOVER]] e [[SALVAR]]. Vazio = nada configurado.
+   */
+  acoes?: string;
+  /**
    * Modelos DA EMPRESA, na ordem de preferência (CRM → Bot). Cada empresa usa
    * as próprias chaves — nunca a de outra. Vazio = bot indisponível.
    */
@@ -136,7 +141,7 @@ export type ProvedorDoBot = {
 /** Modelo sugerido para cada provedor quando a empresa não escolhe. */
 export const MODELO_PADRAO: Record<NomeDoProvedor, string> = {
   gemini: "gemini-2.5-flash-lite",
-  groq: "llama-3.3-70b-versatile",
+  groq: "qwen/qwen3.8-27b",
   anthropic: "claude-haiku-4-5"
 };
 
@@ -187,6 +192,8 @@ type ContextoDaConversa = {
   jaConversou: boolean;
   /** Produto/objetivo desta conversa, configurado na lista. */
   foco?: string;
+  /** Contexto das ações do bot (listas, campos, dados salvos). */
+  acoes?: string;
   /**
    * O que a empresa mandou ANTES de o cliente falar (ex.: modelo do disparo).
    * Vazio = foi o cliente quem começou.
@@ -263,6 +270,9 @@ export function buildSystemPrompt(
         "- Preços, condições e regras continuam vindo SOMENTE da base de conhecimento abaixo."
       ].join("\n")
     );
+  }
+  if (contexto.acoes && contexto.acoes.trim()) {
+    parts.push(`Ações disponíveis nesta conversa:\n${contexto.acoes.trim()}`);
   }
   if (knowledge && knowledge.trim()) {
     parts.push(`Base de conhecimento:\n${knowledge.trim()}`);
@@ -489,6 +499,7 @@ export const generateBotReply = async (
       agora: params.agora || new Date(),
       jaConversou: jaSeApresentou(params.history),
       foco: params.foco,
+      acoes: params.acoes,
       abertura: aberturaDaEmpresa(params.history)
     }
   );

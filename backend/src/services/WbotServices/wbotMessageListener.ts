@@ -68,6 +68,7 @@ import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
+import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -1628,7 +1629,8 @@ const responderRajadaComBot = async (
       contactName: contact.name,
       files,
       foco,
-      provedores: await provedoresDaEmpresa(ticket.companyId)
+      provedores: await provedoresDaEmpresa(ticket.companyId),
+      acoes: await contextoDeAcoes(ticket.id, ticket.companyId)
     });
 
     // Chave central ausente: erro de implantação, ninguém responde.
@@ -1636,7 +1638,11 @@ const responderRajadaComBot = async (
 
     // No handoff o cliente recebe a mensagem de espera e o ticket fica para o
     // humano. Pedido de simulação no meio da resposta vira imagem.
-    const { antes, depois, pedido } = extrairPedidoDeSimulacao(reply.text);
+    const semAcoes = await executarAcoesDoBot(ticket.id, ticket.companyId, reply.text);
+    const extraido = extrairPedidoDeSimulacao(semAcoes);
+    const antes = limparMarcadores(extraido.antes);
+    const depois = limparMarcadores(extraido.depois);
+    const { pedido } = extraido;
     if (antes) await SendWhatsAppMessage({ body: antes, ticket });
     if (pedido) {
       const pronta = await prepararSimulacao(ticket.companyId, ticket.id, pedido);

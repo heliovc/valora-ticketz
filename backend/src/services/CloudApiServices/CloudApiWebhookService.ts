@@ -17,6 +17,7 @@ import { FindOrCreateTicketServiceMetaComEstado } from "../TicketServices/FindOr
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
+import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -313,6 +314,7 @@ async function responderComBot(
       contactName: contact.name,
       files,
       foco,
+      acoes: await contextoDeAcoes(ticketId, companyId),
       provedores
     });
 
@@ -320,7 +322,12 @@ async function responderComBot(
 
     // O bot pode pedir a simulação de taxas no meio da resposta: o marcador sai
     // do texto e a imagem é gerada e enviada aqui, com os números da conta.
-    const { antes, depois, pedido } = extrairPedidoDeSimulacao(resposta.text.trim());
+    // Comandos MOVER/SALVAR executam e saem do texto; o SIMULAR vem depois.
+    const semAcoes = await executarAcoesDoBot(ticket.id, companyId, resposta.text.trim());
+    const extraido = extrairPedidoDeSimulacao(semAcoes);
+    const antes = limparMarcadores(extraido.antes);
+    const depois = limparMarcadores(extraido.depois);
+    const { pedido } = extraido;
     const enviarTexto = async (corpo: string) => {
       const { wamid } = await sendText(whatsapp, contact.number, corpo);
       await CreateMessageService({
