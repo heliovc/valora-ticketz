@@ -8,6 +8,12 @@ import ListSettingsService from "../services/SettingServices/ListSettingsService
 import GetPublicSettingService from "../services/SettingServices/GetPublicSettingService";
 import { GetSettingService } from "../services/SettingServices/GetSettingService";
 
+/**
+ * Configurações que só passam pelas rotas próprias: as chaves dos modelos de IA
+ * (`/ai-bot/providers`) não podem ser lidas nem sobrescritas pela rota genérica.
+ */
+const RESERVADAS = ["aiBotProviders"];
+
 type LogoRequest = {
   mode: string;
 };
@@ -19,7 +25,13 @@ type PrivateFileRequest = {
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const settings = await ListSettingsService(req.user);
 
-  return res.status(200).json(settings);
+  return res
+    .status(200)
+    .json(
+      Array.isArray(settings)
+        ? settings.filter((s: any) => !RESERVADAS.includes(s?.key))
+        : settings
+    );
 };
 
 export const update = async (
@@ -29,6 +41,10 @@ export const update = async (
   const { settingKey: key } = req.params;
   const { value } = req.body;
   const { companyId } = req.user;
+
+  if (RESERVADAS.includes(key)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
 
   if (key.startsWith("_") && !req.user.isSuper) {
     throw new AppError("ERR_NO_PERMISSION", 403);
@@ -64,6 +80,10 @@ export const publicShow = async (
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { settingKey: key } = req.params;
+
+  if (RESERVADAS.includes(key)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
 
   const settingValue = await GetSettingService({ key, user: req.user });
 

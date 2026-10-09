@@ -7,7 +7,8 @@ import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
 import { GetCompanySetting } from "../../helpers/CheckSettings";
 import { hmacSha256Hex, safeEqualBuffers } from "../../helpers/cloudApiCrypto";
-import { generateBotReply, isAiBotAvailable } from "../../helpers/aiBot";
+import { generateBotReply } from "../../helpers/aiBot";
+import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
@@ -288,7 +289,9 @@ async function responderComBot(
     (await GetCompanySetting(companyId, "aiBotEnabled", "disabled")) === "enabled";
 
   if (!botDeveResponder(ticket.aiBotEnabled, daEmpresa)) return;
-  if (!isAiBotAvailable()) return;
+  // Só os modelos DESTA empresa: sem modelo configurado, o bot não responde.
+  const provedores = await provedoresDaEmpresa(companyId);
+  if (!provedores.length) return;
   // Humano assumiu a conversa: o bot sai de cena.
   if (ticket.userId) return;
 
@@ -309,7 +312,8 @@ async function responderComBot(
       userMessage: pendente,
       contactName: contact.name,
       files,
-      foco
+      foco,
+      provedores
     });
 
     if (!resposta || !resposta.text.trim()) return;

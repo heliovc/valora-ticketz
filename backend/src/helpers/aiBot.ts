@@ -33,7 +33,6 @@ import {
  * chamador envia esse texto e deixa o ticket para atendimento humano.
  */
 
-type Provider = "anthropic" | "gemini";
 
 const ANTHROPIC_MODEL = process.env.AI_BOT_MODEL || "claude-haiku-4-5";
 /**
@@ -118,39 +117,39 @@ export type GenerateBotReplyParams = {
    * da configuração da ação "Ligar o Bot de IA". Vazio = sem foco.
    */
   foco?: string;
+  /**
+   * Modelos DA EMPRESA, na ordem de preferência (CRM → Bot). Cada empresa usa
+   * as próprias chaves — nunca a de outra. Vazio = bot indisponível.
+   */
+  provedores: ProvedorDoBot[];
 };
 
-let client: Anthropic | null = null;
+export type NomeDoProvedor = "gemini" | "groq" | "anthropic";
 
-/** Cliente Anthropic singleton; `null` quando a chave central não está configurada. */
-function getClient(): Anthropic | null {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-  if (!client) {
-    client = new Anthropic({ apiKey });
-  }
-  return client;
-}
+/** Um modelo configurado pela empresa, com a chave já decifrada. */
+export type ProvedorDoBot = {
+  provider: NomeDoProvedor;
+  model: string;
+  apiKey: string;
+};
 
-/** Provedor em uso, ou `null` quando nenhuma chave está configurada. */
-function resolveProvider(): Provider | null {
-  const escolhido = (process.env.AI_BOT_PROVIDER || "").trim().toLowerCase();
-  if (escolhido === "gemini") {
-    return process.env.GEMINI_API_KEY ? "gemini" : null;
-  }
-  if (escolhido === "anthropic") {
-    return process.env.ANTHROPIC_API_KEY ? "anthropic" : null;
-  }
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.GEMINI_API_KEY) return "gemini";
-  return null;
-}
+/** Modelo sugerido para cada provedor quando a empresa não escolhe. */
+export const MODELO_PADRAO: Record<NomeDoProvedor, string> = {
+  gemini: "gemini-2.5-flash-lite",
+  groq: "llama-3.3-70b-versatile",
+  anthropic: "claude-haiku-4-5"
+};
 
-/** Indica se o bot de IA pode operar (alguma chave presente). */
-export function isAiBotAvailable(): boolean {
-  return resolveProvider() !== null;
+const clientesAnthropic = new Map<string, Anthropic>();
+
+/** Um cliente por chave: empresas diferentes nunca compartilham credencial. */
+function getClient(apiKey: string): Anthropic {
+  let cliente = clientesAnthropic.get(apiKey);
+  if (!cliente) {
+    cliente = new Anthropic({ apiKey });
+    clientesAnthropic.set(apiKey, cliente);
+  }
+  return cliente;
 }
 
 /**
@@ -299,12 +298,16 @@ export function buildTurns(params: GenerateBotReplyParams): BotTurn[] {
 }
 
 /** Chamada à Anthropic. Devolve o texto puro; erro sobe para o chamador. */
-async function callAnthropic(systemText: string, turns: BotTurn[]): Promise<string> {
-  const anthropic = getClient();
-  if (!anthropic) return "";
+async function callAnthropic(
+  systemText: string,
+  turns: BotTurn[],
+  apiKey: string,
+  model: string
+): Promise<string> {
+  const anthropic = getClient(apiKey);
 
   const response = await anthropic.messages.create({
-    model: ANTHROPIC_MODEL,
+    model: model || ANTHROPIC_MODEL,
     max_tokens: MAX_TOKENS,
     // Prefixo estável (persona + base) cacheado para baratear conversas.
     system: [
@@ -334,8 +337,12 @@ async function callAnthropic(systemText: string, turns: BotTurn[]): Promise<stri
  * pico (fila e cota). Erro de chave ou de payload não se repete: seria gastar
  * o tempo do visitante para receber o mesmo 400.
  */
-async function postComRetentativa(corpo: unknown, apiKey: string): Promise<any> {
-  const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent`;
+async function postComRetentativa(
+  corpo: unknown,
+  apiKey: string,
+  model: string
+): Promise<any> {
+  const url = `${GEMINI_API_BASE}/models/${model || GEMINI_MODEL}:generateContent`;
   let ultimoErro: unknown;
 
   for (let tentativa = 0; tentativa <= GEMINI_RETRY_DELAYS_MS.length; tentativa += 1) {
@@ -348,7 +355,12 @@ async function postComRetentativa(corpo: unknown, apiKey: string): Promise<any> 
     } catch (err) {
       ultimoErro = err;
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      // Cota DIÁRIA estourada não volta em segundos: repetir só atrasa a
+      // passagem para o próximo modelo da lista.
+      const corpoDoErro = axios.isAxiosError(err) ? JSON.stringify(err.response?.data || "") : "";
+      const cotaDoDia = /PerDay/i.test(corpoDoErro);
       const vaiRepetir =
+        !cotaDoDia &&
         tentativa < GEMINI_RETRY_DELAYS_MS.length &&
         status !== undefined &&
         GEMINI_RETRY_STATUS.includes(status);
@@ -365,10 +377,12 @@ async function postComRetentativa(corpo: unknown, apiKey: string): Promise<any> 
  * Chamada ao Gemini (REST, `generateContent`). A chave vai no cabeçalho
  * `X-goog-api-key` — nunca na URL, que é o que aparece em log de proxy.
  */
-async function callGemini(systemText: string, turns: BotTurn[]): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return "";
-
+async function callGemini(
+  systemText: string,
+  turns: BotTurn[],
+  apiKey: string,
+  model: string
+): Promise<string> {
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: MAX_TOKENS,
     temperature: 0.4
@@ -389,7 +403,7 @@ async function callGemini(systemText: string, turns: BotTurn[]): Promise<string>
     generationConfig
   };
 
-  const data = await postComRetentativa(corpo, apiKey);
+  const data = await postComRetentativa(corpo, apiKey, model);
 
   // Resposta barrada por filtro de conteúdo não traz candidato: vira handoff
   // lá em cima, como qualquer resposta vazia.
@@ -408,6 +422,46 @@ async function callGemini(systemText: string, turns: BotTurn[]): Promise<string>
 }
 
 /**
+ * Groq (API compatível com a da OpenAI). Modelo padrão: Llama 3.3 70B.
+ */
+async function callGroq(
+  systemText: string,
+  turns: BotTurn[],
+  apiKey: string,
+  model: string
+): Promise<string> {
+  const { data } = await axios.post(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      model: model || MODELO_PADRAO.groq,
+      max_tokens: MAX_TOKENS,
+      temperature: 0.4,
+      messages: [
+        { role: "system", content: systemText },
+        ...turns.map(turn => ({ role: turn.role, content: turn.text }))
+      ]
+    },
+    {
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      timeout: GEMINI_TIMEOUT_MS
+    }
+  );
+  return String(data?.choices?.[0]?.message?.content || "").trim();
+}
+
+/** Uma chamada ao provedor indicado. Erro sobe — quem chama passa ao próximo. */
+export async function chamarProvedor(
+  provedor: ProvedorDoBot,
+  systemText: string,
+  turns: BotTurn[]
+): Promise<string> {
+  const model = provedor.model || MODELO_PADRAO[provedor.provider];
+  if (provedor.provider === "gemini") return callGemini(systemText, turns, provedor.apiKey, model);
+  if (provedor.provider === "groq") return callGroq(systemText, turns, provedor.apiKey, model);
+  return callAnthropic(systemText, turns, provedor.apiKey, model);
+}
+
+/**
  * Gera a resposta do bot.
  *
  * - `kind: "reply"` — texto do bot, enviar normalmente.
@@ -420,9 +474,9 @@ async function callGemini(systemText: string, turns: BotTurn[]): Promise<string>
 export const generateBotReply = async (
   params: GenerateBotReplyParams
 ): Promise<BotReply | null> => {
-  const provider = resolveProvider();
-  if (!provider) {
-    logger.warn("[aiBot] sem ANTHROPIC_API_KEY nem GEMINI_API_KEY — bot de IA desabilitado");
+  const provedores = (params.provedores || []).filter(p => p.apiKey);
+  if (!provedores.length) {
+    logger.warn("[aiBot] empresa sem modelo de IA configurado — bot não responde");
     return null;
   }
 
@@ -440,23 +494,28 @@ export const generateBotReply = async (
   );
   const turns = buildTurns(params);
 
-  try {
-    const text =
-      provider === "gemini"
-        ? await callGemini(systemText, turns)
-        : await callAnthropic(systemText, turns);
+  // Um modelo por vez, na ordem da empresa: cota estourada, chave inválida ou
+  // queda num deles passa para o próximo sem o cliente perceber.
+  for (const provedor of provedores) {
+    try {
+      const text = await chamarProvedor(provedor, systemText, turns);
 
-    if (!text || text.includes(HANDOFF_TOKEN)) {
-      return { kind: "handoff", text: HANDOFF_MESSAGE };
+      if (!text || text.includes(HANDOFF_TOKEN)) {
+        return { kind: "handoff", text: HANDOFF_MESSAGE };
+      }
+
+      return { kind: "reply", text };
+    } catch (err) {
+      // O corpo da resposta é o que diz a causa real (sem crédito, cota
+      // estourada, chave inválida). Sem ele, o log só mostra "400".
+      const detalhe = axios.isAxiosError(err)
+        ? JSON.stringify(err.response?.data || "").slice(0, 400)
+        : (err as Error)?.message;
+      logger.error(
+        { provider: provedor.provider, model: provedor.model, status: axios.isAxiosError(err) ? err.response?.status : undefined, detalhe },
+        "[aiBot] modelo falhou; tentando o próximo da lista"
+      );
     }
-
-    return { kind: "reply", text };
-  } catch (err) {
-    // O corpo da resposta é o que diz a causa real (sem crédito, cota estourada,
-    // chave inválida). Sem ele, o log só mostra "400" e a investigação começa
-    // do zero — foi o que aconteceu quando o crédito da Anthropic acabou.
-    const detalhe = axios.isAxiosError(err) ? err.response?.data : undefined;
-    logger.error({ err, provider, detalhe }, "[aiBot] falha ao gerar resposta do bot");
-    return { kind: "handoff", text: HANDOFF_MESSAGE, falha: true };
   }
+  return { kind: "handoff", text: HANDOFF_MESSAGE, falha: true };
 };

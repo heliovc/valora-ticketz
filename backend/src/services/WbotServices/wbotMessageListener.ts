@@ -62,7 +62,8 @@ import { getPublicPath } from "../../helpers/GetPublicPath";
 import { Session } from "../../libs/wbot";
 import { checkCompanyCompliant } from "../../helpers/CheckCompanyCompliant";
 import { transcriber } from "../../helpers/transcriber";
-import { generateBotReply, isAiBotAvailable } from "../../helpers/aiBot";
+import { generateBotReply } from "../../helpers/aiBot";
+import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
@@ -1568,7 +1569,8 @@ const handleAiBotReply = async (
   ticket: Ticket,
   contact: Contact
 ): Promise<boolean> => {
-  if (!isAiBotAvailable()) return false;
+  // Só os modelos DESTA empresa: sem modelo configurado, o bot não responde.
+  if (!(await provedoresDaEmpresa(ticket.companyId)).length) return false;
 
   // A decisão da CONVERSA vence a da empresa, nos dois sentidos: uma lista do
   // funil pode ligar o bot numa conta que o tem desligado (triagem automática
@@ -1625,7 +1627,8 @@ const responderRajadaComBot = async (
       userMessage: pendente,
       contactName: contact.name,
       files,
-      foco
+      foco,
+      provedores: await provedoresDaEmpresa(ticket.companyId)
     });
 
     // Chave central ausente: erro de implantação, ninguém responde.

@@ -9,7 +9,8 @@ import { GetCompanySetting } from "../../helpers/CheckSettings";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
 import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
 import CreateMessageService from "../MessageServices/CreateMessageService";
-import { generateBotReply, isAiBotAvailable, BotTurn } from "../../helpers/aiBot";
+import { generateBotReply, BotTurn } from "../../helpers/aiBot";
+import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
@@ -211,7 +212,8 @@ export async function handleVisitorMessage(
   const daEmpresa =
     (await GetCompanySetting(companyId, "aiBotEnabled", "disabled")) === "enabled";
   const botEnabled = botDeveResponder(ticket.aiBotEnabled, daEmpresa);
-  if (botEnabled && isAiBotAvailable() && !ticket.userId) {
+  const provedores = botEnabled ? await provedoresDaEmpresa(companyId) : [];
+  if (botEnabled && provedores.length && !ticket.userId) {
     try {
       const persona = await GetCompanySetting(companyId, "aiBotPersona", "");
       const knowledge = await GetCompanySetting(companyId, "aiBotKnowledge", "");
@@ -224,7 +226,8 @@ export async function handleVisitorMessage(
         userMessage: body,
         contactName: undefined,
         files,
-        foco
+        foco,
+        provedores
       });
       // No Chat do Site a simulação sai como texto (o widget não mostra imagem).
       const { texto: textoDoBot, pedido } = reply
