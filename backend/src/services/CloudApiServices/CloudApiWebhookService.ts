@@ -17,6 +17,7 @@ import { FindOrCreateTicketServiceMetaComEstado } from "../TicketServices/FindOr
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
+import { ehNumeroDaEmpresa } from "../AiBotServices/NumerosProprios";
 import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
@@ -295,6 +296,9 @@ async function responderComBot(
   if (!provedores.length) return;
   // Humano assumiu a conversa: o bot sai de cena.
   if (ticket.userId) return;
+  // Número da própria empresa (outro canal nosso): nunca responder, senão
+  // dois bots conversam entre si.
+  if (await ehNumeroDaEmpresa(companyId, contact.number)) return;
 
   try {
     const { history, pendente } = separarTurnoAtual(

@@ -68,6 +68,7 @@ import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
+import { ehNumeroDaEmpresa } from "../AiBotServices/NumerosProprios";
 import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
@@ -1580,6 +1581,8 @@ const handleAiBotReply = async (
     (await GetCompanySetting(ticket.companyId, "aiBotEnabled", "")) ===
     "enabled";
   if (!botDeveResponder(ticket.aiBotEnabled, daEmpresa)) return false;
+  // Número da própria empresa (ex.: o WhatsApp Oficial): nunca responder.
+  if (await ehNumeroDaEmpresa(ticket.companyId, contact.number)) return false;
 
   agruparRajada(ticket.id, () => responderRajadaComBot(ticket.id, contact));
   return true;
