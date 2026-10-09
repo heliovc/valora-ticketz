@@ -82,7 +82,9 @@ const CreateTicketService = async ({
     },
     "queue",
     "whatsapp",
-    "user",
+    // Só nome e id: o include cru devolvia o usuário inteiro, com o hash da
+    // senha, para quem abria a conversa.
+    { model: User, as: "user", attributes: ["id", "name"] },
     "tags"
   ];
 
