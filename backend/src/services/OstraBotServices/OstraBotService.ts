@@ -31,6 +31,10 @@ import {
  * o rascunho vai para o chat do Hélio com ele mesmo → "ok <id>" posta no
  * grupo (só das 8h às 21h), "não <id>" descarta, "editar <id> <texto>" troca.
  *
+ * Mensagens do próprio Hélio no grupo também disparam (pedido dele em
+ * 21/10/2026). O laço é evitado pelo prefixo: o que o bot posta começa com
+ * "🤖", nunca com "Claude".
+ *
  * Isolamento: só age com `OSTRA_BOT_ENABLED=true`, só na conexão
  * `OSTRA_BOT_WHATSAPP_ID` e só no grupo `OSTRA_GROUP_JID`. Mensagens do grupo
  * seguem para o Ticketz exatamente como antes (o hook devolve `false`); o
@@ -376,7 +380,6 @@ export const handleOstraBotMessage = async (
         Date.now() - momentoDa(msg).getTime() < IDADE_MAX_GATILHO_MS;
       if (
         pergunta &&
-        !fromMe &&
         recente &&
         !(texto || "").startsWith(PREFIXO_GRUPO.trim())
       ) {
