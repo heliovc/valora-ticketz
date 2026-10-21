@@ -6,7 +6,8 @@ import {
   Model,
   PrimaryKey,
   AutoIncrement,
-  DataType
+  DataType,
+  Default
 } from "sequelize-typescript";
 
 export type OstraBotDraftStatus =
@@ -60,6 +61,14 @@ class OstraBotDraft extends Model<OstraBotDraft> {
 
   @Column(DataType.TEXT)
   erro: string;
+
+  /** Quando o Mac buscou o pedido. Vencido em 5 min, volta para a fila. */
+  @Column({ field: "pego_em" })
+  pegoEm: Date;
+
+  @Default(false)
+  @Column({ field: "avisado_mac" })
+  avisadoMac: boolean;
 
   @CreatedAt
   @Column({ field: "criado_em" })

@@ -8,6 +8,10 @@ import { QueryInterface, DataTypes } from "sequelize";
  * de chamar o WhatsApp, então uma queda no meio do envio deixa o rascunho
  * parado em ENVIANDO e ele nunca é reenviado sozinho.
  *
+ * `pego_em`: quando o Mac do Hélio buscou o pedido para gerar o texto (o
+ * modelo roda lá, no Claude Code do plano Max, sem chave de API no servidor).
+ * `avisado_mac`: o Hélio já foi avisado de que o pedido espera o Mac ligado.
+ *
  * `ostra_bot_messages`: o Ticketz ignora grupos e não guarda nada deles. Esta
  * tabela é o histórico que vai de contexto para o modelo (últimas 50).
  */
@@ -31,6 +35,12 @@ module.exports = {
       aprovado_em: { type: DataTypes.DATE, allowNull: true },
       enviado_em: { type: DataTypes.DATE, allowNull: true },
       erro: { type: DataTypes.TEXT, allowNull: true },
+      pego_em: { type: DataTypes.DATE, allowNull: true },
+      avisado_mac: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
       criado_em: { type: DataTypes.DATE, allowNull: false },
       atualizado_em: { type: DataTypes.DATE, allowNull: false }
     });

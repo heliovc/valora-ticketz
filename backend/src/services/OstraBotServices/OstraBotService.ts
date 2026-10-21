@@ -10,7 +10,7 @@ import OstraBotDraft from "../../models/OstraBotDraft";
 import OstraBotMessage from "../../models/OstraBotMessage";
 import { getWbot, Session } from "../../libs/wbot";
 import { logger } from "../../utils/logger";
-import { gerarResposta } from "./ostraBotContext";
+import { historicoDoGrupo } from "./ostraBotContext";
 import {
   ComandoDoHelio,
   dentroDoHorario,
@@ -27,7 +27,8 @@ import {
 /**
  * Assistente "Claude" do grupo Ostra Carioca.
  *
- * Fluxo: alguém no grupo escreve "Claude, ..." → o modelo gera um rascunho →
+ * Fluxo: alguém no grupo escreve "Claude, ..." → o Mac do Hélio busca o
+ * pedido e gera o rascunho com o Claude Code (ver `listarPedidosParaOMac`) →
  * o rascunho vai para o chat do Hélio com ele mesmo → "ok <id>" posta no
  * grupo (só das 8h às 21h), "não <id>" descarta, "editar <id> <texto>" troca.
  *
@@ -152,14 +153,12 @@ const registrarNoHistorico = async (
 
 const criarRascunho = async (
   msg: proto.IWebMessageInfo,
-  wbot: Session,
   cfg: Config,
   autor: string,
   pergunta: string
 ): Promise<void> => {
-  let draft: OstraBotDraft;
   try {
-    draft = await OstraBotDraft.create({
+    const draft = await OstraBotDraft.create({
       groupJid: cfg.groupJid,
       mensagemId: msg.key.id,
       pergunta,
@@ -167,50 +166,111 @@ const criarRascunho = async (
       autorJid: msg.key.participant || null,
       status: "GERANDO"
     } as Partial<OstraBotDraft> as OstraBotDraft);
+    logger.info({ draftId: draft.id, autor }, "[ostraBot] pedido recebido");
   } catch (err) {
     // A mesma mensagem chegou duas vezes: o primeiro rascunho vale.
-    if (ehDuplicada(err)) return;
-    throw err;
+    if (!ehDuplicada(err)) throw err;
   }
+};
 
-  logger.info({ draftId: draft.id, autor }, "[ostraBot] pedido recebido");
+/**
+ * Quem escreve o rascunho é o Claude Code no Mac do Hélio (plano Max, sem
+ * chave de API). O Mac pergunta aqui o que há para fazer. Cada pedido é
+ * "pego" por 5 minutos: se o Mac cair no meio, o pedido volta para a fila.
+ */
+const PRAZO_DO_MAC_MS = 5 * 60 * 1000;
+/** Pedido parado há mais que isso sem o Mac buscar: avisa o Hélio uma vez. */
+const AVISO_MAC_PARADO_MS = 3 * 60 * 1000;
 
-  try {
-    const texto = await gerarResposta({
-      groupJid: cfg.groupJid,
-      autor,
-      pergunta,
-      pedidoEm: momentoDa(msg)
-    });
-    const agora = new Date();
-    await draft.update({
-      rascunho: formatarParaOGrupo(texto),
-      status: "PENDENTE",
-      expiraEm: prazoDoRascunho(agora)
-    });
-    await avisarHelio(
-      wbot,
-      formatarRascunhoParaOHelio({
+export type PedidoParaOMac = {
+  id: number;
+  autor: string;
+  pergunta: string;
+  pedidoEm: string;
+  historico: string;
+};
+
+export const listarPedidosParaOMac = async (): Promise<PedidoParaOMac[]> => {
+  const cfg = configDoBot();
+  if (!cfg) return [];
+  const agora = new Date();
+  const candidatos = await OstraBotDraft.findAll({
+    where: {
+      status: "GERANDO",
+      [Op.or]: [
+        { pegoEm: null },
+        { pegoEm: { [Op.lt]: new Date(agora.getTime() - PRAZO_DO_MAC_MS) } }
+      ]
+    },
+    order: [["id", "ASC"]],
+    limit: 3
+  });
+
+  const pedidos = await Promise.all(
+    candidatos.map(async draft => {
+      const [pegou] = await OstraBotDraft.update(
+        { pegoEm: agora },
+        {
+          where: {
+            id: draft.id,
+            status: "GERANDO",
+            pegoEm: draft.pegoEm || null
+          }
+        }
+      );
+      if (!pegou) return null;
+      return {
         id: draft.id,
-        autor,
-        pergunta,
-        rascunho: draft.rascunho,
-        foraDoHorario: !dentroDoHorario(agora)
-      })
-    );
-  } catch (err) {
-    Sentry.captureException(err);
-    const motivo = String(err?.message || err).slice(0, 300);
+        autor: draft.autor,
+        pergunta: draft.pergunta,
+        pedidoEm: draft.criadoEm.toISOString(),
+        historico: await historicoDoGrupo(cfg.groupJid, draft.criadoEm)
+      };
+    })
+  );
+  return pedidos.filter(Boolean);
+};
+
+/** O Mac devolve o texto (ou o motivo de não ter conseguido). */
+export const receberRascunhoDoMac = async (
+  id: number,
+  resultado: { texto?: string; erro?: string }
+): Promise<"ok" | "ignorado"> => {
+  const cfg = configDoBot();
+  if (!cfg) return "ignorado";
+  const draft = await OstraBotDraft.findByPk(id);
+  if (!draft || draft.status !== "GERANDO") return "ignorado";
+
+  const wbot = getWbot(cfg.whatsappId);
+  const texto = (resultado.texto || "").trim();
+  if (!texto) {
+    const motivo = String(resultado.erro || "resposta vazia").slice(0, 300);
     await draft.update({ status: "ERRO", erro: `geração: ${motivo}` });
-    logger.error(
-      { draftId: draft.id, err: motivo },
-      "[ostraBot] falha ao gerar"
-    );
+    logger.error({ draftId: id, err: motivo }, "[ostraBot] Mac não gerou");
     await avisarHelio(
       wbot,
-      `#${draft.id} Pedido de ${autor}: "${pergunta}"\nNão consegui gerar a resposta (${motivo}). Nada foi postado.`
+      `#${id} Pedido de ${draft.autor}: "${draft.pergunta}"\nNão consegui gerar a resposta (${motivo}). Nada foi postado.`
     );
+    return "ok";
   }
+
+  const agora = new Date();
+  await draft.update({
+    rascunho: formatarParaOGrupo(texto),
+    status: "PENDENTE",
+    expiraEm: prazoDoRascunho(agora)
+  });
+  await avisarHelio(
+    wbot,
+    formatarRascunhoParaOHelio({
+      id,
+      autor: draft.autor,
+      pergunta: draft.pergunta,
+      rascunho: draft.rascunho,
+      foraDoHorario: !dentroDoHorario(agora)
+    })
+  );
+  return "ok";
 };
 
 /**
@@ -383,8 +443,7 @@ export const handleOstraBotMessage = async (
         recente &&
         !(texto || "").startsWith(PREFIXO_GRUPO.trim())
       ) {
-        // Sem await: a geração leva segundos e não pode segurar a fila.
-        criarRascunho(msg, wbot, cfg, autor, pergunta).catch(err => {
+        criarRascunho(msg, cfg, autor, pergunta).catch(err => {
           Sentry.captureException(err);
           logger.error({ err: err?.message }, "[ostraBot] rascunho falhou");
         });
@@ -437,6 +496,38 @@ export const ostraBotTick = async (): Promise<void> => {
       );
     } catch {
       // conexão fora: o status já ficou registrado
+    }
+  }, Promise.resolve());
+
+  // Pedido que esperou o Mac por um dia inteiro já perdeu o sentido.
+  await OstraBotDraft.update(
+    { status: "EXPIRADO", erro: "Mac não buscou o pedido em 24h" },
+    {
+      where: {
+        status: "GERANDO",
+        criadoEm: { [Op.lt]: new Date(agora.getTime() - 24 * 60 * 60 * 1000) }
+      }
+    }
+  );
+
+  const parados = await OstraBotDraft.findAll({
+    where: {
+      status: "GERANDO",
+      pegoEm: null,
+      avisadoMac: false,
+      criadoEm: { [Op.lt]: new Date(agora.getTime() - AVISO_MAC_PARADO_MS) }
+    }
+  });
+  await parados.reduce(async (anterior, draft) => {
+    await anterior;
+    await draft.update({ avisadoMac: true });
+    try {
+      await avisarHelio(
+        getWbot(cfg.whatsappId),
+        `#${draft.id} Pedido de ${draft.autor}: "${draft.pergunta}"\nEstá esperando o seu Mac ligado para eu escrever a resposta.`
+      );
+    } catch {
+      // conexão fora: o pedido segue na fila
     }
   }, Promise.resolve());
 

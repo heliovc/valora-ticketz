@@ -37,12 +37,15 @@ import wavoipRoutes from "./wavoipRoutes";
 import webchatRoutes from "./webchatRoutes";
 import cloudApiRoutes from "./cloudApiRoutes";
 import aiBotProvidersRoutes from "./aiBotProvidersRoutes";
+import ostraBotRoutes from "./ostraBotRoutes";
 
 const routes = Router();
 
 routes.use(webchatRoutes);
 // Antes das rotas autenticadas: o webhook da Meta é público por obrigação.
 routes.use(cloudApiRoutes);
+// Assistente Ostra Carioca: autenticado por token próprio, não pelo JWT.
+routes.use(ostraBotRoutes);
 routes.use(aiBotProvidersRoutes);
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);
