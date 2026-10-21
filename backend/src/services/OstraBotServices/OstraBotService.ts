@@ -313,6 +313,38 @@ const responderComando = async (
   );
 };
 
+const gruposJaLogados = new Set<string>();
+
+/**
+ * Modo de descoberta: bot ligado, conexão certa e `OSTRA_GROUP_JID` vazio.
+ * Loga uma vez o JID e o nome de cada grupo que falar, para o Hélio copiar o
+ * do Ostra Carioca. Não responde nada.
+ */
+const descobrirGrupo = async (
+  msg: proto.IWebMessageInfo,
+  wbot: Session
+): Promise<void> => {
+  const ligado =
+    (process.env.OSTRA_BOT_ENABLED || "").trim().toLowerCase() === "true";
+  const jid = msg.key?.remoteJid || "";
+  if (
+    !ligado ||
+    (process.env.OSTRA_GROUP_JID || "").trim() ||
+    wbot.id !== Number(process.env.OSTRA_BOT_WHATSAPP_ID) ||
+    !jid.endsWith("@g.us") ||
+    gruposJaLogados.has(jid)
+  ) {
+    return;
+  }
+  gruposJaLogados.add(jid);
+  try {
+    const meta = await wbot.groupMetadata(jid);
+    logger.info({ jid, nome: meta.subject }, "[ostraBot] grupo visto");
+  } catch {
+    logger.info({ jid }, "[ostraBot] grupo visto (sem nome)");
+  }
+};
+
 /**
  * Chamado no início do tratamento de toda mensagem. Devolve `true` só quando a
  * mensagem era do bot (comando ou aviso no chat do Hélio) e não deve seguir
@@ -323,6 +355,7 @@ export const handleOstraBotMessage = async (
   wbot: Session
 ): Promise<boolean> => {
   try {
+    await descobrirGrupo(msg, wbot);
     const cfg = configDoBot();
     if (!cfg || wbot.id !== cfg.whatsappId) return false;
 
