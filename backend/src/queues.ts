@@ -27,6 +27,7 @@ import Setting from "./models/Setting";
 import { parseToMilliseconds } from "./helpers/parseToMilliseconds";
 import { startCampaignQueues } from "./queues/campaign";
 import { startFunnelAutomationQueue } from "./queues/funnelAutomation";
+import { ostraBotTick } from "./services/OstraBotServices/OstraBotService";
 import { startCloudApiBroadcastQueue } from "./services/CloudApiServices/CloudApiBroadcastService";
 import OutOfTicketMessage from "./models/OutOfTicketMessages";
 import { getJidOf } from "./services/WbotServices/getJidOf";
@@ -560,6 +561,7 @@ async function handleEveryMinute(job: Job) {
   try {
     await handleRatingsTimeout();
     await handleTicketTimeouts();
+    await ostraBotTick();
     logger.trace(`handleEveryMinute: exiting - executionId: ${executionId}`);
   } catch (e) {
     logger.error(

@@ -2,6 +2,8 @@ import { Sequelize } from "sequelize-typescript";
 import User from "../models/User";
 import Setting from "../models/Setting";
 import AiBotFile from "../models/AiBotFile";
+import OstraBotDraft from "../models/OstraBotDraft";
+import OstraBotMessage from "../models/OstraBotMessage";
 import Contact from "../models/Contact";
 import ContactTag from "../models/ContactTag";
 import Ticket from "../models/Ticket";
@@ -66,6 +68,8 @@ const models = [
   ContactCustomField,
   Setting,
   AiBotFile,
+  OstraBotDraft,
+  OstraBotMessage,
   Queue,
   WhatsappQueue,
   UserQueue,

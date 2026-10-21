@@ -28,6 +28,7 @@ import Message from "../../models/Message";
 import OldMessage from "../../models/OldMessage";
 
 import { getIO } from "../../libs/socket";
+import { handleOstraBotMessage } from "../OstraBotServices/OstraBotService";
 import CreateMessageService, {
   websocketCreateMessage
 } from "../MessageServices/CreateMessageService";
@@ -1679,6 +1680,10 @@ const handleMessage = async (
   if (msg.message?.ephemeralMessage) {
     msg.message = msg.message.ephemeralMessage.message;
   }
+
+  // Assistente do grupo Ostra Carioca: só age na conexão e no grupo
+  // configurados; devolve true apenas para os comandos no chat do dono.
+  if (await handleOstraBotMessage(msg, wbot)) return;
 
   try {
     let msgContact: IMe;
