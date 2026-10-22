@@ -40,6 +40,14 @@ ticketRoutes.put(
   TicketController.updateAiBot
 );
 
+// Trocar a conexão de WhatsApp da conversa (oficial ↔ QR), mantendo o card.
+ticketRoutes.put(
+  "/tickets/:ticketId/connection",
+  isAuth,
+  isCompliant,
+  TicketController.updateConnection
+);
+
 ticketRoutes.delete(
   "/tickets/:ticketId",
   isAuth,

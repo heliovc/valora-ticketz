@@ -34,6 +34,7 @@ import {
   numberWhereClause,
   resolveConnectionByPhoneNumberId
 } from "./CloudApiChannel";
+import { TIPOS_DE_MIDIA, baixarMidiaDaMeta, rotuloDaMidia } from "./CloudApiMediaService";
 import { sendImage, sendText } from "./CloudApiSendService";
 import { extrairAtribuicao } from "../../helpers/adReferral";
 
@@ -108,13 +109,14 @@ function extrairTexto(msg: any): { body: string; mediaType?: string } {
     case "video":
     case "document":
     case "sticker":
-      // Baixar a mídia é um passo a mais (URL assinada da Graph) e fica para a
-      // próxima entrega. Aqui o atendente pelo menos SABE que algo chegou, em
-      // vez de ver a conversa pular sem explicação.
+      // Este é o texto de RESERVA: a mídia em si é baixada depois que o ticket
+      // existe (`baixarMidiaDaMeta`), e aí o corpo vira a legenda ou o rótulo.
+      // Só fica assim se o download falhar — e aí dizer isso é mais honesto
+      // do que "abra no celular", que o Hélio leu como se fosse o normal.
       return {
         body:
           msg[msg.type]?.caption ||
-          `📎 ${msg.type === "image" ? "Imagem" : msg.type === "audio" ? "Áudio" : msg.type === "video" ? "Vídeo" : msg.type === "sticker" ? "Figurinha" : "Documento"} recebido — abra no celular para ver`,
+          `📎 ${rotuloDaMidia(msg.type)} recebido — não foi possível baixar`,
         mediaType: msg.type
       };
     case "unsupported":
@@ -219,15 +221,26 @@ async function processarMensagem(
     }
   }
 
+  // Mídia: baixa da Graph e grava como o canal por QR faz. Com o arquivo em
+  // mãos o corpo é a legenda (ou só o rótulo), e o painel mostra a imagem.
+  const midia = TIPOS_DE_MIDIA.includes(msg?.type)
+    ? await baixarMidiaDaMeta(whatsapp, msg, ticket)
+    : null;
+  const corpo = midia ? msg[msg.type]?.caption || `📎 ${rotuloDaMidia(msg.type)}` : body;
+
   await CreateMessageService({
     messageData: {
       id: wamid,
       ticketId: ticket.id,
       contactId: contact.id,
-      body,
+      body: corpo,
       fromMe: false,
       read: false,
-      ...(mediaType ? { mediaType } : {}),
+      ...(midia
+        ? { mediaType: midia.mediaType, mediaUrl: midia.mediaUrl }
+        : mediaType
+          ? { mediaType }
+          : {}),
       channel: CHANNEL
     },
     companyId

@@ -12,6 +12,7 @@ import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import UpdateTicketAiBotService from "../services/TicketServices/UpdateTicketAiBotService";
 import ListTicketsServiceKanban from "../services/TicketServices/ListTicketsServiceKanban";
+import TrocarConexaoDoTicketService from "../services/TicketServices/TrocarConexaoDoTicketService";
 
 type IndexQuery = {
   isSearch?: string;
@@ -218,6 +219,25 @@ export const update = async (
     return result;
   });
 
+  return res.status(200).json(ticket);
+};
+
+/** Troca a conexão de WhatsApp da conversa, mantendo o ticket. */
+export const updateConnection = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { ticketId } = req.params;
+  const { whatsappId } = req.body as { whatsappId?: number | string };
+  const { companyId } = req.user;
+  if (!whatsappId) {
+    throw new AppError("Informe a conexão (whatsappId).", 400);
+  }
+  const ticket = await TrocarConexaoDoTicketService({
+    ticketId: Number.parseInt(ticketId, 10),
+    whatsappId: Number(whatsappId),
+    companyId
+  });
   return res.status(200).json(ticket);
 };
 

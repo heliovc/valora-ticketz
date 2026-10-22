@@ -49,6 +49,23 @@ const CreateMessageService = async ({
 }: Request): Promise<Message> => {
   await Message.upsert({ ...messageData, companyId });
 
+  // Quem falou por último — é o que o Funil usa para marcar "sem resposta".
+  // Fica aqui porque toda mensagem de todo canal passa por este serviço.
+  // `silent`: não mexe no `updatedAt`, que ordena as colunas do Funil.
+  const fromMe = !!messageData.fromMe;
+  await Ticket.update(
+    {
+      lastMessageFromMe: fromMe,
+      ...(fromMe ? {} : { lastClientMessageAt: new Date() }),
+      // O chat do site nunca gravava `lastMessage`: o card do Funil ficava sem
+      // a prévia da conversa. Os outros canais gravam por conta própria.
+      ...(messageData.channel === "webchat" && messageData.body
+        ? { lastMessage: messageData.body.slice(0, 255).replace(/\n/g, " ") }
+        : {})
+    },
+    { where: { id: messageData.ticketId }, silent: true }
+  );
+
   const message = await Message.findOne({
     where: {
       id: messageData.id,
