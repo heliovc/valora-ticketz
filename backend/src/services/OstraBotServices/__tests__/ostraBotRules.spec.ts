@@ -3,8 +3,10 @@ import {
   descreverMidia,
   extrairPergunta,
   formatarParaOGrupo,
+  formatarAviso,
   formatarRascunhoParaOHelio,
   interpretarComando,
+  perguntaDeResposta,
   prazoDoRascunho,
   proximaAbertura
 } from "../ostraBotRules";
@@ -14,7 +16,10 @@ const brt = (iso: string) => new Date(`${iso}-03:00`);
 
 describe("extrairPergunta", () => {
   it.each([
-    ["Claude, quanto fica 100 taças a R$ 3,80?", "quanto fica 100 taças a R$ 3,80?"],
+    [
+      "Claude, quanto fica 100 taças a R$ 3,80?",
+      "quanto fica 100 taças a R$ 3,80?"
+    ],
     ["claude: tem fornecedor de gelo?", "tem fornecedor de gelo?"],
     ["CLAUDE quanto custa", "quanto custa"],
     ["  Claude,   oi", "oi"]
@@ -103,7 +108,9 @@ describe("formatarRascunhoParaOHelio", () => {
     });
     expect(msg).toContain('#5 Pedido de Dani: "quanto fica?"');
     expect(msg).toContain("Rascunho: 🤖 R$ 380");
-    expect(msg).toContain('Responda "ok 5" para enviar, "não 5" para descartar');
+    expect(msg).toContain(
+      'Responda "ok 5" para enviar, "não 5" para descartar'
+    );
   });
 });
 
@@ -114,5 +121,26 @@ describe("descreverMidia", () => {
     expect(
       descreverMidia({ tipo: "documentMessage", nomeArquivo: "orcamento.pdf" })
     ).toBe("[PDF: orcamento.pdf]");
+  });
+});
+
+describe("perguntaDeResposta", () => {
+  it("resposta citando o bot vira pergunta, com o trecho citado", () => {
+    const p = perguntaDeResposta("Sim", "🤖 Quer que eu monte um rascunho?");
+    expect(p).toContain("Sim");
+    expect(p).toContain("Quer que eu monte um rascunho?");
+  });
+
+  it("ignora citação de mensagem que não é do bot e mensagens do próprio bot", () => {
+    expect(perguntaDeResposta("Sim", "Vamos fechar o carrinho?")).toBeNull();
+    expect(perguntaDeResposta("🤖 Atualizei", "🤖 algo")).toBeNull();
+    expect(perguntaDeResposta("", "🤖 algo")).toBeNull();
+  });
+});
+
+describe("formatarAviso", () => {
+  it("põe o prefixo uma vez e não corta em 4 linhas", () => {
+    const aviso = formatarAviso("🤖 a\nb\nc\nd\ne");
+    expect(aviso).toBe("🤖 a\nb\nc\nd\ne");
   });
 });

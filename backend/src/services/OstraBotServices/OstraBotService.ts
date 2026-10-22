@@ -16,10 +16,12 @@ import {
   dentroDoHorario,
   descreverMidia,
   extrairPergunta,
+  formatarAviso,
   formatarParaOGrupo,
   formatarRascunhoParaOHelio,
   interpretarComando,
   MARCA_DO_BOT,
+  perguntaDeResposta,
   PREFIXO_GRUPO,
   prazoDoRascunho
 } from "./ostraBotRules";
@@ -462,7 +464,12 @@ export const handleOstraBotMessage = async (
         : msg.pushName || (msg.key.participant || "").split("@")[0] || "alguém";
       await registrarNoHistorico(msg, cfg, autor, historico);
 
-      const pergunta = extrairPergunta(texto);
+      const citada = msg.message?.extendedTextMessage?.contextInfo
+        ?.quotedMessage as proto.IMessage | undefined;
+      const textoCitado =
+        citada?.conversation || citada?.extendedTextMessage?.text || null;
+      const pergunta =
+        extrairPergunta(texto) || perguntaDeResposta(texto, textoCitado);
       const recente =
         Date.now() - momentoDa(msg).getTime() < IDADE_MAX_GATILHO_MS;
       if (
@@ -498,6 +505,72 @@ export const handleOstraBotMessage = async (
     logger.error({ err: err?.message }, "[ostraBot] erro no tratamento");
     return false;
   }
+};
+
+/**
+ * Monitor da planilha (Mac do Hélio): mensagens do grupo depois de um id.
+ * `ultimoId` deixa o Mac começar do agora na primeira execução, sem
+ * reprocessar o histórico.
+ */
+export const listarMensagensParaOMac = async (
+  depois: number,
+  limite: number
+): Promise<{
+  ultimoId: number;
+  mensagens: { id: number; autor: string; texto: string; enviadaEm: string }[];
+}> => {
+  const cfg = configDoBot();
+  if (!cfg) return { ultimoId: 0, mensagens: [] };
+  const ultimoId =
+    (await OstraBotMessage.max<number, OstraBotMessage>("id", {
+      where: { groupJid: cfg.groupJid }
+    })) || 0;
+  const msgs = await OstraBotMessage.findAll({
+    where: { groupJid: cfg.groupJid, id: { [Op.gt]: depois } },
+    order: [["id", "ASC"]],
+    limit: Math.min(Math.max(limite, 1), 300)
+  });
+  return {
+    ultimoId,
+    mensagens: msgs.map(m => ({
+      id: m.id,
+      autor: m.autor,
+      texto: m.texto,
+      enviadaEm: m.enviadaEm.toISOString()
+    }))
+  };
+};
+
+/**
+ * Aviso do monitor ("Atualizei a planilha: ..."). Mesmo caminho dos
+ * rascunhos: nasce APROVADO, respeita o horário e nunca é reenviado. A
+ * `chave` torna o pedido idempotente: o Mac pode repetir a chamada sem
+ * duplicar o aviso.
+ */
+export const publicarAvisoDoMac = async (
+  chave: string,
+  texto: string
+): Promise<"ok" | "repetido" | "ignorado"> => {
+  const cfg = configDoBot();
+  if (!cfg || !texto.trim() || !chave.trim()) return "ignorado";
+  const agora = new Date();
+  let draft: OstraBotDraft;
+  try {
+    draft = await OstraBotDraft.create({
+      groupJid: cfg.groupJid,
+      mensagemId: `aviso-${chave.slice(0, 100)}`,
+      pergunta: "atualização automática da planilha",
+      autor: "monitor",
+      rascunho: formatarAviso(texto),
+      status: "APROVADO",
+      aprovadoEm: agora
+    } as Partial<OstraBotDraft> as OstraBotDraft);
+  } catch (err) {
+    if (ehDuplicada(err)) return "repetido";
+    throw err;
+  }
+  if (dentroDoHorario(agora)) await enviarNoGrupo(draft.id, cfg);
+  return "ok";
 };
 
 /** A cada minuto: expira rascunhos sem resposta e solta os aprovados às 8h. */

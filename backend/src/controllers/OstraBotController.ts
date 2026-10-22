@@ -1,7 +1,9 @@
 import { timingSafeEqual } from "crypto";
 import { Request, Response } from "express";
 import {
+  listarMensagensParaOMac,
   listarPedidosParaOMac,
+  publicarAvisoDoMac,
   receberRascunhoDoMac
 } from "../services/OstraBotServices/OstraBotService";
 
@@ -43,4 +45,23 @@ export const entregar = async (
     erro: typeof erro === "string" ? erro : undefined
   });
   return res.json({ resultado });
+};
+
+export const mensagens = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  if (!tokenConfere(req)) return res.status(404).end();
+  const depois = Number(req.query.depois) || 0;
+  const limite = Number(req.query.limite) || 200;
+  return res.json(await listarMensagensParaOMac(depois, limite));
+};
+
+export const aviso = async (req: Request, res: Response): Promise<Response> => {
+  if (!tokenConfere(req)) return res.status(404).end();
+  const { chave, texto } = req.body || {};
+  if (typeof chave !== "string" || typeof texto !== "string") {
+    return res.status(400).json({ error: "chave e texto são obrigatórios" });
+  }
+  return res.json({ resultado: await publicarAvisoDoMac(chave, texto) });
 };

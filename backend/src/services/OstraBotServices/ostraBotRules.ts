@@ -29,6 +29,33 @@ export const extrairPergunta = (
   return pergunta.length > 0 ? pergunta : null;
 };
 
+/**
+ * Resposta a uma mensagem do próprio bot também é pergunta para ele, mesmo
+ * sem "Claude" na frente (ex.: o bot perguntou "Quer que eu monte o texto?"
+ * e alguém respondeu "Sim" citando a mensagem). A pergunta leva junto o
+ * trecho citado, para o modelo saber do que se trata.
+ */
+export const perguntaDeResposta = (
+  texto: string | null | undefined,
+  textoCitado: string | null | undefined
+): string | null => {
+  const t = (texto || "").trim();
+  const citado = (textoCitado || "").trim();
+  if (!t || !citado.startsWith(PREFIXO_GRUPO.trim())) return null;
+  if (t.startsWith(PREFIXO_GRUPO.trim())) return null;
+  return `${t}\n(em resposta à mensagem do assistente: "${citado.slice(0, 400)}")`;
+};
+
+/** Aviso do monitor da planilha: prefixo do bot e teto de tamanho. */
+export const formatarAviso = (texto: string): string => {
+  const corpo = texto
+    .replace(/\r/g, "")
+    .trim()
+    .replace(/^🤖\s*/u, "")
+    .slice(0, 1500);
+  return `${PREFIXO_GRUPO}${corpo}`;
+};
+
 export type ComandoDoHelio =
   | { tipo: "ok"; id: number }
   | { tipo: "nao"; id: number }
