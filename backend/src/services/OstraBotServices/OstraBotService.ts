@@ -28,9 +28,10 @@ import {
  * Assistente "Claude" do grupo Ostra Carioca.
  *
  * Fluxo: alguém no grupo escreve "Claude, ..." → o Mac do Hélio busca o
- * pedido e gera o rascunho com o Claude Code (ver `listarPedidosParaOMac`) →
- * o rascunho vai para o chat do Hélio com ele mesmo → "ok <id>" posta no
- * grupo (só das 8h às 21h), "não <id>" descarta, "editar <id> <texto>" troca.
+ * pedido e gera a resposta com o Claude Code (ver `listarPedidosParaOMac`) →
+ * a resposta vai direto para o grupo (só das 8h às 21h; fora disso, às 8h).
+ * Com `OSTRA_BOT_APROVACAO=true`, vira rascunho no chat do Hélio consigo
+ * mesmo: "ok <id>" posta, "não <id>" descarta, "editar <id> <texto>" troca.
  *
  * Mensagens do próprio Hélio no grupo também disparam (pedido dele em
  * 21/10/2026). O laço é evitado pelo prefixo: o que o bot posta começa com
@@ -64,6 +65,14 @@ export const configDoBot = (): Config | null => {
     dono: process.env.OSTRA_BOT_DONO_NOME || "Hélio"
   };
 };
+
+/**
+ * Aprovação do Hélio antes de postar. Desligada por padrão desde 22/10/2026,
+ * a pedido dele ("assistente autônomo"). `OSTRA_BOT_APROVACAO=true` volta ao
+ * fluxo de rascunho + "ok <id>" sem mexer em código.
+ */
+const aprovacaoLigada = (): boolean =>
+  (process.env.OSTRA_BOT_APROVACAO || "").trim().toLowerCase() === "true";
 
 const IGNORAR = [
   "protocolMessage",
@@ -255,21 +264,36 @@ export const receberRascunhoDoMac = async (
   }
 
   const agora = new Date();
+
+  if (aprovacaoLigada()) {
+    await draft.update({
+      rascunho: formatarParaOGrupo(texto),
+      status: "PENDENTE",
+      expiraEm: prazoDoRascunho(agora)
+    });
+    await avisarHelio(
+      wbot,
+      formatarRascunhoParaOHelio({
+        id,
+        autor: draft.autor,
+        pergunta: draft.pergunta,
+        rascunho: draft.rascunho,
+        foraDoHorario: !dentroDoHorario(agora)
+      })
+    );
+    return "ok";
+  }
+
+  // Autônomo: já nasce aprovado. Dentro do horário sai agora; fora dele o
+  // tick das 8h solta, na ordem dos pedidos.
   await draft.update({
     rascunho: formatarParaOGrupo(texto),
-    status: "PENDENTE",
-    expiraEm: prazoDoRascunho(agora)
+    status: "APROVADO",
+    aprovadoEm: agora
   });
-  await avisarHelio(
-    wbot,
-    formatarRascunhoParaOHelio({
-      id,
-      autor: draft.autor,
-      pergunta: draft.pergunta,
-      rascunho: draft.rascunho,
-      foraDoHorario: !dentroDoHorario(agora)
-    })
-  );
+  if (dentroDoHorario(agora)) {
+    await enviarNoGrupo(id, cfg);
+  }
   return "ok";
 };
 
@@ -291,7 +315,10 @@ const enviarNoGrupo = async (draftId: number, cfg: Config): Promise<void> => {
     await wbot.sendMessage(cfg.groupJid, { text: draft.rascunho });
     await draft.update({ status: "ENVIADO", enviadoEm: new Date() });
     logger.info({ draftId }, "[ostraBot] enviado no grupo");
-    await avisarHelio(wbot, `#${draftId} enviado no grupo.`);
+    // No modo autônomo o Hélio vê a resposta no próprio grupo.
+    if (aprovacaoLigada()) {
+      await avisarHelio(wbot, `#${draftId} enviado no grupo.`);
+    }
   } catch (err) {
     Sentry.captureException(err);
     const motivo = String(err?.message || err).slice(0, 300);
