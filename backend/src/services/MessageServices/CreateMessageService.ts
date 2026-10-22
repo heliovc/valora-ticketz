@@ -56,7 +56,12 @@ const CreateMessageService = async ({
   await Ticket.update(
     {
       lastMessageFromMe: fromMe,
-      ...(fromMe ? {} : { lastClientMessageAt: new Date() })
+      ...(fromMe ? {} : { lastClientMessageAt: new Date() }),
+      // O chat do site nunca gravava `lastMessage`: o card do Funil ficava sem
+      // a prévia da conversa. Os outros canais gravam por conta própria.
+      ...(messageData.channel === "webchat" && messageData.body
+        ? { lastMessage: messageData.body.slice(0, 255).replace(/\n/g, " ") }
+        : {})
     },
     { where: { id: messageData.ticketId }, silent: true }
   );
