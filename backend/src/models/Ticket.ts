@@ -66,6 +66,24 @@ class Ticket extends Model<Ticket> {
   @Column(DataType.DATE)
   lastInboundAt: Date | null;
 
+  /**
+   * Quem mandou a ÚLTIMA mensagem: true = a empresa (atendente ou bot), false =
+   * o cliente, null = conversa sem mensagem. É o que o Funil usa para marcar
+   * "sem resposta": `unreadMessages` zera quando o atendente ABRE a conversa,
+   * mesmo sem responder, e por isso não servia. Vale para todos os canais.
+   */
+  @Column(DataType.BOOLEAN)
+  lastMessageFromMe: boolean | null;
+
+  /**
+   * Quando o cliente falou pela última vez, em QUALQUER canal (QR, oficial,
+   * chat do site). Diferente de `lastInboundAt`, que é só do oficial e manda na
+   * janela de 24h da Meta — por isso não é reaproveitado: importar histórico
+   * antigo não pode reabrir janela nenhuma.
+   */
+  @Column(DataType.DATE)
+  lastClientMessageAt: Date | null;
+
   // --- De qual anúncio veio esta conversa -----------------------------------
   // A Meta manda o `referral` só na PRIMEIRA mensagem depois do clique no
   // anúncio. Quem não grava na hora perde. Tudo nulo = conversa orgânica.
