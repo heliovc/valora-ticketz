@@ -5,13 +5,16 @@ import Message from "../models/Message";
 import Ticket from "../models/Ticket";
 import { logger } from "../utils/logger";
 import GetTicketWbot from "./GetTicketWbot";
+import { isBaileys } from "./channelTraits";
 
 const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
   await ticket.update({ unreadMessages: 0 }, { silent: true });
-  let companyId: number;
+  let companyId: number = ticket.companyId;
 
   try {
-    const wbot = await GetTicketWbot(ticket);
+    // Recibo de leitura só existe no canal por QR; nos outros não há wbot, e
+    // tentar pegá-lo derrubava a função antes de marcar as mensagens no banco.
+    const wbot = isBaileys(ticket.channel) ? await GetTicketWbot(ticket) : null;
 
     if (wbot) {
       const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

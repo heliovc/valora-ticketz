@@ -66,7 +66,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     queues
   });
 
-  if (ticket.channel === "whatsapp" && markAsRead === "true") {
+  // Qualquer canal: o contador de não lidas do card é o mesmo para QR, oficial
+  // e chat do site. Antes só o QR zerava, e o "1" do oficial ficava para sempre.
+  if (markAsRead === "true") {
     SetTicketMessagesAsRead(ticket);
   }
 
