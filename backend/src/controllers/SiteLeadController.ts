@@ -69,7 +69,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     companyId,
     channel: conexao.canal
   } as any);
-  const ticket = await FindOrCreateTicketServiceMeta(contato, conexao.id, 1, companyId, conexao.canal);
+  const ticket = await FindOrCreateTicketServiceMeta(contato, conexao.id, 0, companyId, conexao.canal);
 
   const msg = await CreateMessageService({
     messageData: {
