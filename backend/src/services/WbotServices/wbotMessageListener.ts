@@ -72,6 +72,7 @@ import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
 import { ehNumeroDaEmpresa } from "../AiBotServices/NumerosProprios";
 import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
+import { ferramentasDoBot } from "../AiBotServices/FerramentasDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -1643,7 +1644,8 @@ const responderRajadaComBot = async (
       files,
       foco,
       provedores: await provedoresDaEmpresa(ticket.companyId),
-      acoes: await contextoDeAcoes(ticket.id, ticket.companyId)
+      acoes: await contextoDeAcoes(ticket.id, ticket.companyId),
+      ferramentas: await ferramentasDoBot(ticket.id, ticket.companyId)
     });
 
     // Chave central ausente: erro de implantação, ninguém responde.

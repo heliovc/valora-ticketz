@@ -16,6 +16,7 @@ import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
 import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
+import { ferramentasDoBot } from "../AiBotServices/FerramentasDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -229,7 +230,8 @@ export async function handleVisitorMessage(
         files,
         foco,
         acoes: await contextoDeAcoes(ticket.id, companyId),
-        provedores
+        provedores,
+        ferramentas: await ferramentasDoBot(ticket.id, companyId)
       });
       // No Chat do Site a simulação sai como texto (o widget não mostra imagem).
       const semAcoes = reply

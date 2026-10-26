@@ -61,6 +61,8 @@ const GEMINI_RETRY_DELAYS_MS = [800, 2500];
 const GEMINI_RETRY_STATUS = [429, 500, 503];
 
 const MAX_TOKENS = Number(process.env.AI_BOT_MAX_TOKENS || 600);
+/** Rodadas de ferramenta por resposta: uma consulta e uma reserva, no máximo. */
+const MAX_RODADAS_DE_FERRAMENTAS = 2;
 const HANDOFF_TOKEN = "__HUMANO__";
 
 /**
@@ -76,6 +78,35 @@ export type BotTurn = { role: "user" | "assistant"; text: string };
 
 /** Arquivo de consulta do lojista, já com o texto extraído. */
 export type BotFile = { name: string; text: string };
+
+/** Um comando de ferramenta escrito pelo modelo, ex.: CONSULTAR_AGENDA data="14/03/2027". */
+export type ChamadaDeFerramenta = { nome: string; args: Record<string, string> };
+
+/**
+ * Ferramentas que o bot CONSULTA antes de responder (agenda, depois preço e
+ * cobrança). O catálogo entra no prompt; `executar` recebe os comandos que o
+ * modelo escreveu e devolve o texto do resultado para a rodada seguinte.
+ */
+export type FerramentasParaOBot = {
+  nomes: string[];
+  catalogo: string;
+  executar: (chamadas: ChamadaDeFerramenta[]) => Promise<string>;
+};
+
+/** Comandos de ferramenta presentes no texto, na ordem. Marcador = [[NOME chave="valor" ...]]. */
+export function extrairChamadas(texto: string, nomes: string[]): ChamadaDeFerramenta[] {
+  if (!nomes.length) return [];
+  const re = new RegExp(`\\[\\[\\s*(${nomes.join("|")})\\b([^\\]]*)\\]\\]`, "gi");
+  const chamadas: ChamadaDeFerramenta[] = [];
+  for (const m of String(texto || "").matchAll(re)) {
+    const args: Record<string, string> = {};
+    for (const a of m[2].matchAll(/(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s\]]+))/g)) {
+      args[a[1].toLowerCase()] = (a[2] ?? a[3] ?? a[4] ?? "").trim();
+    }
+    chamadas.push({ nome: m[1].toUpperCase(), args });
+  }
+  return chamadas;
+}
 
 /**
  * Teto do conjunto de arquivos dentro do prompt. Cada arquivo já vem cortado
@@ -127,6 +158,8 @@ export type GenerateBotReplyParams = {
    * as próprias chaves — nunca a de outra. Vazio = bot indisponível.
    */
   provedores: ProvedorDoBot[];
+  /** Ferramentas desta conversa (agenda…). Vazio = o bot só conversa. */
+  ferramentas?: FerramentasParaOBot;
 };
 
 export type NomeDoProvedor = "gemini" | "groq" | "anthropic";
@@ -194,6 +227,8 @@ type ContextoDaConversa = {
   foco?: string;
   /** Contexto das ações do bot (listas, campos, dados salvos). */
   acoes?: string;
+  /** Catálogo das ferramentas de consulta (agenda…). */
+  ferramentas?: string;
   /**
    * O que a empresa mandou ANTES de o cliente falar (ex.: modelo do disparo).
    * Vazio = foi o cliente quem começou.
@@ -273,6 +308,9 @@ export function buildSystemPrompt(
   }
   if (contexto.acoes && contexto.acoes.trim()) {
     parts.push(`Ações disponíveis nesta conversa:\n${contexto.acoes.trim()}`);
+  }
+  if (contexto.ferramentas && contexto.ferramentas.trim()) {
+    parts.push(contexto.ferramentas.trim());
   }
   if (knowledge && knowledge.trim()) {
     parts.push(`Base de conhecimento:\n${knowledge.trim()}`);
@@ -500,21 +538,46 @@ export const generateBotReply = async (
       jaConversou: jaSeApresentou(params.history),
       foco: params.foco,
       acoes: params.acoes,
+      ferramentas: params.ferramentas?.catalogo,
       abertura: aberturaDaEmpresa(params.history)
     }
   );
-  const turns = buildTurns(params);
+  let turns = buildTurns(params);
 
   // Um modelo por vez, na ordem da empresa: cota estourada, chave inválida ou
   // queda num deles passa para o próximo sem o cliente perceber.
   for (const provedor of provedores) {
     try {
-      const text = await chamarProvedor(provedor, systemText, turns);
+      let text = await chamarProvedor(provedor, systemText, turns);
+      // Ferramentas: o modelo pede (CONSULTAR_AGENDA, PRE_RESERVAR…), o sistema
+      // executa e devolve o resultado, e o modelo escreve a resposta final.
+      // Poucas rodadas de propósito: uma consulta e uma reserva, nunca um giro.
+      const comandosPendentes: string[] = [];
+      let rodadas = 0;
+      while (params.ferramentas && rodadas < MAX_RODADAS_DE_FERRAMENTAS) {
+        const chamadas = extrairChamadas(text, params.ferramentas.nomes);
+        if (!chamadas.length) break;
+        rodadas += 1;
+        // SALVAR/MOVER escritos junto com a ferramenta não podem se perder: a
+        // resposta final é outra, e é dela que as ações são executadas.
+        comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR)\b[^\]]*\]\]/gi) || []));
+        const resultado = await params.ferramentas.executar(chamadas);
+        turns = [
+          ...turns,
+          { role: "assistant", text },
+          {
+            role: "user",
+            text: `[SISTEMA] Resultado das ferramentas:\n${resultado}\n\nAgora escreva a resposta ao cliente com base nesse resultado. Não repita os comandos já executados.`
+          }
+        ];
+        text = await chamarProvedor(provedor, systemText, turns);
+      }
 
       if (!text || text.includes(HANDOFF_TOKEN)) {
         return { kind: "handoff", text: HANDOFF_MESSAGE };
       }
 
+      if (comandosPendentes.length) text = `${text}\n${comandosPendentes.join("\n")}`;
       return { kind: "reply", text };
     } catch (err) {
       // O corpo da resposta é o que diz a causa real (sem crédito, cota

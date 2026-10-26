@@ -19,6 +19,7 @@ import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
 import { ehNumeroDaEmpresa } from "../AiBotServices/NumerosProprios";
 import { contextoDeAcoes, executarAcoesDoBot, limparMarcadores } from "../AiBotServices/AcoesDoBot";
+import { ferramentasDoBot } from "../AiBotServices/FerramentasDoBot";
 import {
   AVISO_ACIMA_DO_SIMPLES,
   extrairPedidoDeSimulacao,
@@ -344,7 +345,8 @@ async function responderComBot(
       files,
       foco,
       acoes: await contextoDeAcoes(ticketId, companyId),
-      provedores
+      provedores,
+      ferramentas: await ferramentasDoBot(ticketId, companyId)
     });
 
     if (!resposta || !resposta.text.trim()) return;
