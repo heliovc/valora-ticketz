@@ -9,7 +9,7 @@ import {
   validarValor
 } from "../qualificacao";
 
-/** Campos do Élo Eventos, como a Valora grava em `aiBotFields`. */
+/** Campos do Elo Eventos, como a Valora grava em `aiBotFields`. */
 const CAMPOS: CampoQualificavel[] = [
   { nome: "nome", descricao: "Nome", tipo: "texto", aplicaA: ["comum"], obrigatorio: true, ordem: 1 },
   { nome: "tipo_festa", descricao: "Tipo", tipo: "opcao", aplicaA: ["comum"], obrigatorio: true, ordem: 2, opcoes: ["casamento", "15_anos", "infantil"] },

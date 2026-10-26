@@ -17,7 +17,7 @@ import {
  * do WhatsApp Oficial) e nunca devolvidas à tela — só os 4 últimos caracteres.
  *
  * Empresa SEM modelo próprio usa os da Valora, lidos do ambiente (decisão do
- * Hélio, 26/10/2026, para o Élo Eventos: "chave de IA da Valora"). Antes, sem
+ * Hélio, 26/10/2026, para o Elo Eventos: "chave de IA da Valora"). Antes, sem
  * chave própria o bot simplesmente não respondia. A chave da Valora nunca
  * aparece na tela de ninguém.
  */

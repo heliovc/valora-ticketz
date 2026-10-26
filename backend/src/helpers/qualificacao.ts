@@ -7,7 +7,7 @@
  * o que já está respondido e se o valor informado é válido. Campo sem
  * metadado continua como antes: o modelo pergunta quando quiser.
  *
- * Nasceu com o Élo Eventos (26/10/2026), mas é de qualquer nicho: "aplica a"
+ * Nasceu com o Elo Eventos (26/10/2026), mas é de qualquer nicho: "aplica a"
  * olha o valor de um campo seletor (ex.: `tipo_festa`) e nada aqui conhece
  * festa alguma.
  */
@@ -190,7 +190,7 @@ export function interpretarSimNao(bruto: string): "sim" | "não" | null {
   return null;
 }
 
-/** Sinônimos comuns para as opções do Élo Eventos; outras opções casam por texto. */
+/** Sinônimos comuns para as opções do Elo Eventos; outras opções casam por texto. */
 const SINONIMOS: Record<string, string[]> = {
   casamento: ["casamento", "casar", "noiva", "noivo", "wedding", "mini wedding", "bodas"],
   "15_anos": ["15 anos", "15", "quinze", "debutante", "quinze anos", "15anos"],

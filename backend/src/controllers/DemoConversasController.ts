@@ -15,7 +15,7 @@ import { logger } from "../utils/logger";
 /**
  * Conversas de demonstração (Valora): grava contatos, cards e mensagens com
  * data no passado, sem mandar nada para WhatsApp nenhum. Usado pelo Smart para
- * montar o ambiente demo do Élo Eventos. Só o admin da empresa, e o "limpar"
+ * montar o ambiente demo do Elo Eventos. Só o admin da empresa, e o "limpar"
  * exige confirmação explícita porque apaga TODAS as conversas da empresa.
  */
 
