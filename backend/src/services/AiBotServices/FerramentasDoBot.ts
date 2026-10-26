@@ -31,10 +31,12 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
     ].join("\n")
   },
   proposta: {
-    nomes: ["GERAR_PROPOSTA"],
+    nomes: ["GERAR_PROPOSTA", "COBRAR_SINAL"],
     texto: [
       "- GERAR_PROPOSTA — monta a proposta com o preço da tabela para o tipo de festa, a data e o número de convidados já salvos, e devolve o LINK para o cliente. Use quando o cliente quiser saber valores ou pedir a proposta. Nunca diga um preço sem ela.",
-      '  Comando: [[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="nome do pacote (opcional: vazio traz todas as opções)"]]'
+      '  Comando: [[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="nome do pacote (opcional: vazio traz todas as opções)"]]',
+      "- COBRAR_SINAL — DEPOIS que o cliente disser que quer fechar: aceita a proposta (a opção escolhida) e devolve o Pix do sinal para você enviar. Nunca use sem o cliente pedir para fechar.",
+      '  Comando: [[COBRAR_SINAL pacote="nome do pacote (só se a proposta tiver mais de uma opção)"]]'
     ].join("\n")
   }
 };
@@ -85,6 +87,7 @@ export async function ferramentasDoBot(
         ch.nome === "CONSULTAR_AGENDA" ? "agenda/consultar"
         : ch.nome === "PRE_RESERVAR" ? "agenda/pre-reservar"
         : ch.nome === "GERAR_PROPOSTA" ? "proposta/gerar"
+        : ch.nome === "COBRAR_SINAL" ? "proposta/aceitar-e-cobrar"
         : null;
       if (!rota) continue;
       const corpo = {
