@@ -130,6 +130,23 @@ describe("executar a ação", () => {
     });
   });
 
+  it("follow-up de silêncio não sai para quem acabou de responder", () => {
+    // "Ainda está aí?" depois de o cliente escrever é constrangedor.
+    expect(
+      decidirExecucao({ ...base, soSemResposta: true, clienteRespondeu: true })
+    ).toEqual({
+      acao: "descartar",
+      motivo: "o cliente respondeu antes do follow-up"
+    });
+    expect(
+      decidirExecucao({ ...base, soSemResposta: true, clienteRespondeu: false })
+    ).toEqual({ acao: "executar" });
+    // Mensagem comum da lista não liga para isso.
+    expect(
+      decidirExecucao({ ...base, soSemResposta: false, clienteRespondeu: true })
+    ).toEqual({ acao: "executar" });
+  });
+
   it("conversa nova não exige lista", () => {
     // A automação da Entrada não pertence a lista nenhuma; exigir uma
     // descartaria todas.

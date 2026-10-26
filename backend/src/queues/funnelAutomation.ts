@@ -205,11 +205,16 @@ async function executar(
     : true;
 
   const respeitaExpediente = !!acao.soHorarioComercial;
+  const soSemResposta = !!(acao.config as Record<string, unknown> | null)?.soSemResposta;
+  const clienteRespondeu =
+    !!ticket.lastInboundAt && !!run.createdAt && ticket.lastInboundAt > run.createdAt;
   const decisao = decidirExecucao({
     tipo: acao.tipo,
     aindaNaLista,
     exigeLista,
     respeitaExpediente,
+    soSemResposta,
+    clienteRespondeu,
     // Só consulta o expediente quando a regra pede — evita ida ao banco à toa.
     dentroDoExpediente:
       respeitaExpediente && respeitaExpedienteSeConfigurado(acao.tipo)

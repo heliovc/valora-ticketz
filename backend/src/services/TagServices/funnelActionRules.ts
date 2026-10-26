@@ -136,12 +136,22 @@ export function decidirExecucao(params: {
   dentroDoExpediente: boolean;
   postergacoes: number;
   maxPostergacoes: number;
+  /** Follow-up: só sai se o cliente continuou em silêncio desde o agendamento. */
+  soSemResposta?: boolean;
+  /** O cliente mandou mensagem depois que a ação foi agendada. */
+  clienteRespondeu?: boolean;
 }): DecisaoDeExecucao {
   // Mandar "obrigado pela compra" para quem voltou para "negociação" é pior do
   // que não mandar nada. Vale para qualquer tipo: ligar o bot de uma lista que
   // o card já deixou também está errado.
   if (params.exigeLista && !params.aindaNaLista) {
     return { acao: "descartar", motivo: "card saiu da lista antes da execução" };
+  }
+
+  // Follow-up de silêncio: "ainda está aí?" para quem acabou de responder é
+  // constrangedor. A conversa continuou — a cobrança de retorno não cabe mais.
+  if (params.soSemResposta && params.clienteRespondeu) {
+    return { acao: "descartar", motivo: "o cliente respondeu antes do follow-up" };
   }
 
   // Ação silenciosa ignora expediente — ver `ehAcaoSilenciosa`.
