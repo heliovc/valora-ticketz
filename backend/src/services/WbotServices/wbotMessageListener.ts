@@ -63,6 +63,7 @@ import { getPublicPath } from "../../helpers/GetPublicPath";
 import { Session } from "../../libs/wbot";
 import { checkCompanyCompliant } from "../../helpers/CheckCompanyCompliant";
 import { transcriber } from "../../helpers/transcriber";
+import { transcreverAudioSePossivel } from "../../helpers/transcricaoGemini";
 import { generateBotReply } from "../../helpers/aiBot";
 import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
@@ -779,6 +780,14 @@ export const verifyMediaMessage = async (
           "Error transcribing audio message"
         );
       }
+    } else {
+      // Sem chave da OpenAI: Gemini (da empresa ou da Valora) transcreve.
+      const texto = await transcreverAudioSePossivel(
+        ticket.companyId,
+        mediaUrl.startsWith("http") ? mediaUrl : `${getPublicPath()}/${mediaUrl}`,
+        mimetype
+      );
+      if (texto) body = `🎤 ${texto}`;
     }
   }
 

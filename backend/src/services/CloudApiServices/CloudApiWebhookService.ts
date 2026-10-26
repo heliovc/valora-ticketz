@@ -29,6 +29,8 @@ import {
   ultimoDisparoRecebido
 } from "./CloudApiBroadcastService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
+import { transcreverAudioSePossivel } from "../../helpers/transcricaoGemini";
+import { getPublicPath } from "../../helpers/GetPublicPath";
 import {
   CHANNEL,
   numberWhereClause,
@@ -226,7 +228,17 @@ async function processarMensagem(
   const midia = TIPOS_DE_MIDIA.includes(msg?.type)
     ? await baixarMidiaDaMeta(whatsapp, msg, ticket)
     : null;
-  const corpo = midia ? msg[msg.type]?.caption || `📎 ${rotuloDaMidia(msg.type)}` : body;
+  // Áudio vira texto quando há um modelo Gemini (da empresa ou da Valora):
+  // o bot só lê texto, e cliente de casa de festas manda áudio.
+  const transcricao =
+    midia?.mediaType === "audio"
+      ? await transcreverAudioSePossivel(companyId, `${getPublicPath()}/${midia.mediaUrl}`, msg?.audio?.mime_type)
+      : null;
+  const corpo = transcricao
+    ? `🎤 ${transcricao}`
+    : midia
+      ? msg[msg.type]?.caption || `📎 ${rotuloDaMidia(msg.type)}`
+      : body;
 
   await CreateMessageService({
     messageData: {

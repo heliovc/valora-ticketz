@@ -13,12 +13,14 @@ import {
 /**
  * Modelos de IA do bot, POR EMPRESA (CRM → Bot → Modelos de IA).
  *
- * Cada empresa usa só as próprias chaves: a da Valora nunca atende outra
- * conta, e vice-versa. As chaves ficam cifradas no banco (mesma chave de
- * cifra do WhatsApp Oficial) e nunca voltam para a tela — só os 4 últimos
- * caracteres, para a pessoa saber qual está salva.
+ * Cada empresa usa as próprias chaves, cifradas no banco (mesma chave de cifra
+ * do WhatsApp Oficial) e nunca devolvidas à tela — só os 4 últimos caracteres.
+ *
+ * Empresa SEM modelo próprio usa os da Valora, lidos do ambiente (decisão do
+ * Hélio, 26/10/2026, para o Élo Eventos: "chave de IA da Valora"). Antes, sem
+ * chave própria o bot simplesmente não respondia. A chave da Valora nunca
+ * aparece na tela de ninguém.
  */
-
 const CHAVE = "aiBotProviders";
 const NOMES: NomeDoProvedor[] = ["gemini", "groq", "anthropic"];
 const MAX = 4;
@@ -36,7 +38,38 @@ async function lerGravados(companyId: number): Promise<Gravado[]> {
   }
 }
 
-/** Para o motor do bot: a lista na ordem, com as chaves decifradas. */
+/**
+ * Modelos da Valora, do ambiente: `AI_BOT_VALORA_PROVIDERS` (JSON
+ * `[{"provider":"anthropic","model":"claude-haiku-4-5","apiKey":"..."}]`) ou,
+ * na falta dele, as chaves soltas `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` /
+ * `GROQ_API_KEY`, nessa ordem de preferência.
+ */
+export function provedoresDaValora(): ProvedorDoBot[] {
+  const lista: ProvedorDoBot[] = [];
+  const json = process.env.AI_BOT_VALORA_PROVIDERS;
+  if (json) {
+    try {
+      const itens = JSON.parse(json);
+      if (Array.isArray(itens)) {
+        for (const it of itens) {
+          const provider = String(it?.provider || "").toLowerCase() as NomeDoProvedor;
+          if (NOMES.includes(provider) && it?.apiKey) {
+            lista.push({ provider, model: String(it.model || MODELO_PADRAO[provider]), apiKey: String(it.apiKey) });
+          }
+        }
+      }
+    } catch (err: any) {
+      logger.error({ message: err?.message }, "[aiBot] AI_BOT_VALORA_PROVIDERS inválido");
+    }
+  }
+  if (lista.length) return lista;
+  if (process.env.ANTHROPIC_API_KEY) lista.push({ provider: "anthropic", model: process.env.AI_BOT_MODEL || MODELO_PADRAO.anthropic, apiKey: process.env.ANTHROPIC_API_KEY });
+  if (process.env.GEMINI_API_KEY) lista.push({ provider: "gemini", model: process.env.AI_BOT_GEMINI_MODEL || MODELO_PADRAO.gemini, apiKey: process.env.GEMINI_API_KEY });
+  if (process.env.GROQ_API_KEY) lista.push({ provider: "groq", model: MODELO_PADRAO.groq, apiKey: process.env.GROQ_API_KEY });
+  return lista;
+}
+
+/** Para o motor do bot: os da empresa, na ordem, com as chaves decifradas — ou os da Valora. */
 export async function provedoresDaEmpresa(companyId: number): Promise<ProvedorDoBot[]> {
   const gravados = await lerGravados(companyId);
   const prontos: ProvedorDoBot[] = [];
@@ -47,10 +80,10 @@ export async function provedoresDaEmpresa(companyId: number): Promise<ProvedorDo
       logger.error({ companyId, provider: g.provider, message: err?.message }, "[aiBot] chave do modelo ilegível");
     }
   }
-  return prontos;
+  return prontos.length ? prontos : provedoresDaValora();
 }
 
-/** Para a tela: sem a chave, só o final dela. */
+/** Para a tela: sem a chave, só o final dela. Os da Valora não aparecem. */
 export async function descreverProvedores(companyId: number) {
   return (await lerGravados(companyId)).map(g => ({
     provider: g.provider,
