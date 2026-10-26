@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import AppError from "../errors/AppError";
+import Company from "../models/Company";
+import Setting from "../models/Setting";
 import Contact from "../models/Contact";
 import ContactCustomField from "../models/ContactCustomField";
 import Message from "../models/Message";
@@ -170,4 +172,33 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   logger.info(`[demo] empresa ${companyId}: ${criados.length} conversas gravadas`);
   return res.status(201).json({ conversas: criados.length, tickets: criados });
+};
+
+/**
+ * Copia as chaves de IA (`aiBotProviders`, cifradas com o segredo global) de
+ * outra empresa — a da Valora — para a empresa que chama. Decisão do Hélio
+ * (26/10/2026): a demo usa as chaves que já estão no CRM.
+ */
+export const copiarIa = async (req: Request, res: Response): Promise<Response> => {
+  const { companyId, profile } = req.user;
+  if (profile !== "admin") throw new AppError("ERR_NO_PERMISSION", 403);
+  const { deExternalId } = req.body as { deExternalId?: string };
+  if (!deExternalId) throw new AppError("deExternalId é obrigatório", 400);
+  const origem = await Company.findOne({ where: { externalId: deExternalId } });
+  if (!origem) return res.json({ copiadas: 0, motivo: "empresa de origem não existe no motor" });
+  if (origem.id === companyId) return res.json({ copiadas: 0, motivo: "mesma empresa" });
+  let copiadas = 0;
+  for (const key of ["aiBotProviders"]) {
+    // eslint-disable-next-line no-await-in-loop
+    const de = await Setting.findOne({ where: { companyId: origem.id, key } });
+    if (!de?.value) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const para = await Setting.findOne({ where: { companyId, key } });
+    // eslint-disable-next-line no-await-in-loop
+    if (para) await para.update({ value: de.value });
+    else await Setting.create({ companyId, key, value: de.value } as any);
+    copiadas++;
+  }
+  logger.info(`[demo] empresa ${companyId}: ${copiadas} chave(s) de IA copiada(s) da empresa ${origem.id}`);
+  return res.json({ copiadas });
 };

@@ -39,6 +39,7 @@ import cloudApiRoutes from "./cloudApiRoutes";
 import aiBotProvidersRoutes from "./aiBotProvidersRoutes";
 import ostraBotRoutes from "./ostraBotRoutes";
 import demoConversasRoutes from "./demoConversasRoutes";
+import siteLeadRoutes from "./siteLeadRoutes";
 
 const routes = Router();
 
@@ -48,6 +49,7 @@ routes.use(cloudApiRoutes);
 // Assistente Ostra Carioca: autenticado por token próprio, não pelo JWT.
 routes.use(ostraBotRoutes);
 routes.use(demoConversasRoutes);
+routes.use(siteLeadRoutes);
 routes.use(aiBotProvidersRoutes);
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);

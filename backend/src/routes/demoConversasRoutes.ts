@@ -6,5 +6,6 @@ import * as DemoConversasController from "../controllers/DemoConversasController
 const demoConversasRoutes = express.Router();
 
 demoConversasRoutes.post("/demo/conversas", isAuth, DemoConversasController.store);
+demoConversasRoutes.post("/demo/ia-da-valora", isAuth, DemoConversasController.copiarIa);
 
 export default demoConversasRoutes;
