@@ -19,6 +19,7 @@ import { parametrosDoContato } from "../services/CloudApiServices/CloudApiBroadc
 import formatBody from "../helpers/Mustache";
 import { checkOpenHours } from "../helpers/checkOpenHours";
 import { logger } from "../utils/logger";
+import { registrarEnvioDeCampanha } from "../services/SalesAiServices/SalesAiService";
 import { notificarValoraPorEmail } from "../services/TagServices/notificarValora";
 import {
   decidirAgendamento,
@@ -301,6 +302,7 @@ async function executar(
         )
       );
       await run.update({ sentAt: new Date() } as any);
+      await marcarCampanha(acao, ticket);
       logger.info(
         `[funnel] modelo ${config.templateName} enviado ticket=${ticket.id} acao=${acao.id}`
       );
@@ -323,6 +325,7 @@ async function executar(
       }
       await SendChannelMessage({ body: corpo, ticket });
       await run.update({ sentAt: new Date() } as any);
+      await marcarCampanha(acao, ticket);
       logger.info(
         `[funnel] enviado ticket=${ticket.id} acao=${acao.id} canal=${ticket.channel}`
       );
@@ -349,6 +352,7 @@ async function executar(
       saveOnTicket: ticket.id
     });
     await run.update({ sentAt: new Date() } as any);
+      await marcarCampanha(acao, ticket);
     logger.info(
       `[funnel] enviado ticket=${ticket.id} acao=${acao.id} contato=${ticket.contact.name}`
     );
@@ -365,6 +369,17 @@ async function executar(
  * Mover para "Negociação", onde um humano assume, tem de calar o bot — bot
  * respondendo por cima do atendente é o erro que o cliente percebe na hora.
  */
+/** Val Vendas: mensagem de campanha numa lista de prospecção do painel (ELO-WA). */
+async function marcarCampanha(acao: FunnelAction, ticket: Ticket): Promise<void> {
+  try {
+    if (!acao.tagId || !ticket.contact?.number) return;
+    const lista = await Tag.findByPk(acao.tagId);
+    await registrarEnvioDeCampanha(ticket.companyId, ticket.contact.number, acao.tagId, lista?.name || `lista ${acao.tagId}`);
+  } catch (err: any) {
+    logger.warn(`[funnel] marcação de campanha falhou ticket=${ticket.id}: ${err?.message}`);
+  }
+}
+
 export async function desligarBotAoSairDaLista(
   ticketId: number,
   tagId: number,

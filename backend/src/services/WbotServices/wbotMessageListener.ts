@@ -33,6 +33,17 @@ import CreateMessageService, {
   websocketCreateMessage
 } from "../MessageServices/CreateMessageService";
 import { logger } from "../../utils/logger";
+import {
+  aplicarComandoVal,
+  aplicarResposta,
+  avaliarMensagemRecebida,
+  decidir as decidirVendas,
+  escopoDeVendas,
+  pausarPorHumano,
+  promptDeVendas
+} from "../SalesAiServices/SalesAiService";
+import { DecisaoDaIa, lerComandoVal } from "../SalesAiServices/salesAiRules";
+import { SalesAiConfig } from "../../models/SalesAi";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import UpdateTicketService, {
@@ -1567,6 +1578,10 @@ const handleChartbot = async (
 
 const AI_BOT_HISTORY_LIMIT = 12;
 
+/** Contato recarregado do banco (a flag de pessoal pode ter mudado no painel). */
+const contatoAtual = async (contact: Contact): Promise<Contact> =>
+  (await Contact.findByPk(contact.id)) || contact;
+
 /**
  * Bot de IA (Valora): assume a conversa quando habilitado para a Company ou
  * para o ticket. Retorna `true` se assumiu (a resposta sai logo depois),
@@ -1608,7 +1623,13 @@ const responderRajadaComBot = async (
     // Durante a espera um atendente pode ter assumido ou o bot ter sido
     // desligado pelo funil: vale o estado de agora, não o de quando chegou.
     const ticket = await Ticket.findByPk(ticketId);
-    if (!ticket || ticket.userId) return;
+    if (!ticket) return;
+    const vendas = await escopoDeVendas(ticket);
+    if (vendas) {
+      await responderRajadaDeVendas(ticket, await contatoAtual(contact), vendas);
+      return;
+    }
+    if (ticket.userId) return;
     const daEmpresa =
       (await GetCompanySetting(ticket.companyId, "aiBotEnabled", "")) ===
       "enabled";
@@ -1674,10 +1695,51 @@ const responderRajadaComBot = async (
     }
     if (depois) await SendWhatsAppMessage({ body: depois, ticket });
     if (reply.kind === "handoff" && !reply.falha) await passarParaHumano(ticket.id, ticket.companyId);
+    // Falha de todos os provedores: avisa uma vez e pausa o bot nesta conversa,
+    // em vez de repetir "Só um momento…" a cada mensagem (decisão 26/10/2026).
+    if (reply.kind === "handoff" && reply.falha) await passarParaHumano(ticket.id, ticket.companyId);
   } catch (err) {
     Sentry.captureException(err);
     logger.error({ err, ticketId }, "[aiBot] falha ao responder a rajada");
   }
+};
+
+/**
+ * Val Vendas no QR: a playbook é a persona, sem ferramentas nem ações do funil.
+ * Decide de novo (o estado pode ter mudado durante a espera da rajada).
+ */
+const responderRajadaDeVendas = async (
+  ticket: Ticket,
+  contact: Contact,
+  cfg: SalesAiConfig
+): Promise<void> => {
+  const decisao = await decidirVendas(ticket, contact, cfg);
+  if (!decisao.reply) {
+    logger.info(`[val-vendas] ticket ${ticket.id}: desistiu na hora de responder (${decisao.reason})`);
+    return;
+  }
+  const recent = await Message.findAll({
+    where: { ticketId: ticket.id, isDeleted: false },
+    order: [["createdAt", "DESC"]],
+    limit: AI_BOT_HISTORY_LIMIT
+  });
+  const { history, pendente } = separarTurnoAtual(recent.reverse());
+  if (!pendente) return;
+  const reply = await generateBotReply({
+    persona: await promptDeVendas(cfg),
+    knowledge: "",
+    history,
+    userMessage: pendente,
+    contactName: contact.name,
+    files: [],
+    provedores: await provedoresDaEmpresa(ticket.companyId)
+  });
+  if (!reply) return;
+  const texto = await aplicarResposta(ticket, contact, cfg, reply.text, {
+    handoff: reply.kind === "handoff",
+    falha: !!reply.falha
+  });
+  if (texto) await SendWhatsAppMessage({ body: texto, ticket, sentBy: "ai" });
 };
 
 const handleMessage = async (
@@ -1971,6 +2033,37 @@ const handleMessage = async (
       });
     }
 
+    // Val Vendas: comando #val digitado no celular (sai para o contato antes de
+    // chegarmos aqui — por isso apagamos para todos na hora) e decisão da IA
+    // em toda mensagem recebida numa conexão da Val Vendas.
+    let decisaoDeVendas: DecisaoDaIa | null = null;
+    if (msg.key.fromMe) {
+      const comando = !isGroup ? lerComandoVal(bodyMessage) : null;
+      if (comando && (await escopoDeVendas(ticket))) {
+        await aplicarComandoVal(ticket, comando, "celular");
+        try {
+          await wbot.sendMessage(msg.key.remoteJid, { delete: msg.key });
+        } catch (errApagar) {
+          logger.warn({ err: errApagar }, "[val-vendas] não consegui apagar o #val do celular");
+        }
+        if (newMessage) await newMessage.update({ isDeleted: true });
+        return;
+      }
+      // Digitada no celular (o que o CRM envia não volta por aqui). Só conta
+      // mensagem recente: a sincronização de histórico também chega assim.
+      const recente =
+        Date.now() / 1000 - Number(msg.messageTimestamp || 0) < 180;
+      if (!isGroup && recente && newMessage && ticket.salesSource) {
+        await newMessage.update({ sentBy: "humano" });
+        await pausarPorHumano(ticket.id);
+      }
+    } else {
+      decisaoDeVendas = await avaliarMensagemRecebida(ticket, contact, {
+        ehGrupo: isGroup,
+        messageId: msg.key.id
+      });
+    }
+
     if (isGroup || contact.disableBot || msg.key.fromMe) {
       if (ticket.chatbot) {
         await updateTicket(ticket, { chatbot: false });
@@ -2078,7 +2171,13 @@ const handleMessage = async (
     // Bot de IA (Valora): assume a conversa quando habilitado, com o contato
     // sem atendente humano atribuído, fora de grupo e com o bot não desativado
     // para este contato. Em handoff/erro segue o fluxo padrão (humano/fila).
-    if (
+    if (decisaoDeVendas) {
+      // Conexão da Val Vendas: a IA antiga nunca responde aqui.
+      if (decisaoDeVendas.reply && bodyMessage) {
+        agruparRajada(ticket.id, () => responderRajadaComBot(ticket.id, contact));
+        return;
+      }
+    } else if (
       !msg.key.fromMe &&
       !isGroup &&
       !ticket.userId &&

@@ -7,6 +7,12 @@ import Message from "../../models/Message";
 import Contact from "../../models/Contact";
 import { GetCompanySetting } from "../../helpers/CheckSettings";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
+import {
+  aplicarResposta,
+  avaliarMensagemRecebida,
+  escopoDeVendas,
+  promptDeVendas
+} from "../SalesAiServices/SalesAiService";
 import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { generateBotReply, BotTurn } from "../../helpers/aiBot";
@@ -207,6 +213,39 @@ export async function handleVisitorMessage(
 
   const out: WebchatMessageDTO[] = [toDTO(visitorMsg)];
 
+  // Val Vendas: se o chat do site estiver na configuração, quem decide é a regra nova.
+  const decisaoDeVendas = await avaliarMensagemRecebida(ticket, contact, { messageId: visitorMsg.id });
+  if (decisaoDeVendas) {
+    if (decisaoDeVendas.reply) {
+      try {
+        const cfg = await escopoDeVendas(ticket);
+        const reply = cfg
+          ? await generateBotReply({
+              persona: await promptDeVendas(cfg),
+              knowledge: "",
+              history,
+              userMessage: body,
+              files: [],
+              provedores: await provedoresDaEmpresa(companyId)
+            })
+          : null;
+        const corpo = reply && cfg
+          ? await aplicarResposta(ticket, contact, cfg, reply.text, { handoff: reply.kind === "handoff", falha: !!reply.falha })
+          : "";
+        if (corpo) {
+          const botMsg = await CreateMessageService({
+            messageData: { id: randomUUID(), ticketId: ticket.id, contactId: contact.id, body: corpo, fromMe: true, read: true, channel: CHANNEL, sentBy: "ai" },
+            companyId
+          });
+          out.push(toDTO(botMsg));
+        }
+      } catch (err) {
+        logger.error({ err }, "[val-vendas] chat do site: falha ao responder");
+      }
+    }
+    return { messages: out };
+  }
+
   // Bot só responde se: ligado + chave central presente + ticket sem atendente humano.
   // A decisão DESTA conversa vence a da empresa, igual ao WhatsApp: o botão do
   // card tem de valer no widget também, senão desligar o bot num atendimento
@@ -257,13 +296,14 @@ export async function handleVisitorMessage(
             body: corpo,
             fromMe: true,
             read: true,
-            channel: CHANNEL
+            channel: CHANNEL,
+            sentBy: "ai"
           },
           companyId
         });
         out.push(toDTO(botMsg));
       }
-      if (reply?.kind === "handoff" && !reply.falha) await passarParaHumano(ticket.id, companyId);
+      if (reply?.kind === "handoff") await passarParaHumano(ticket.id, companyId);
     } catch (err) {
       logger.error({ err }, "webchat: falha ao gerar resposta do bot");
     }

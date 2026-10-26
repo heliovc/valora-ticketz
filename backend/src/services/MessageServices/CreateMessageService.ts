@@ -6,6 +6,7 @@ import OldMessage from "../../models/OldMessage";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import { logger } from "../../utils/logger";
+import { aoGravarMensagemNossa } from "../SalesAiServices/SalesAiService";
 
 interface MessageData {
   id: string;
@@ -20,6 +21,8 @@ interface MessageData {
   ack?: number;
   queueId?: number;
   channel?: string;
+  /** Quem enviou (mensagens nossas): ai | humano | automacao | sistema. */
+  sentBy?: string;
 }
 interface Request {
   messageData: MessageData;
@@ -122,6 +125,9 @@ const CreateMessageService = async ({
   if (!message) {
     throw new Error("ERR_CREATING_MESSAGE");
   }
+
+  // Val Vendas: grava quem enviou (a IA conta para os limites do painel).
+  aoGravarMensagemNossa(message, messageData.sentBy);
 
   if (!(await checkCompanyCompliant(companyId))) {
     return message;

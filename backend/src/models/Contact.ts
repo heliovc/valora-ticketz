@@ -59,6 +59,11 @@ class Contact extends Model {
   @Column
   disableBot: boolean;
 
+  /** Contato pessoal: a Val Vendas nunca responde nem loga o conteúdo. */
+  @Default(false)
+  @Column
+  isPersonal: boolean;
+
   @Default("available")
   @Column
   presence: string;

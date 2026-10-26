@@ -55,6 +55,14 @@ class Message extends Model {
   @Column(DataType.TEXT)
   body: string;
 
+  /** Quem enviou (só mensagens nossas): ai | humano | automacao | sistema. */
+  @Column(DataType.STRING)
+  sentBy: string | null;
+
+  /** Texto como chegou, antes de tirar o código ELO-* (Val Vendas). */
+  @Column(DataType.TEXT)
+  bodyOriginal: string | null;
+
   @Column(DataType.STRING)
   get mediaUrl(): string | null {
     const value = this.getDataValue("mediaUrl");

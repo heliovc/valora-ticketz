@@ -40,6 +40,7 @@ import aiBotProvidersRoutes from "./aiBotProvidersRoutes";
 import ostraBotRoutes from "./ostraBotRoutes";
 import demoConversasRoutes from "./demoConversasRoutes";
 import siteLeadRoutes from "./siteLeadRoutes";
+import salesAiRoutes from "./salesAiRoutes";
 
 const routes = Router();
 
@@ -50,6 +51,7 @@ routes.use(cloudApiRoutes);
 routes.use(ostraBotRoutes);
 routes.use(demoConversasRoutes);
 routes.use(siteLeadRoutes);
+routes.use(salesAiRoutes);
 routes.use(aiBotProvidersRoutes);
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);

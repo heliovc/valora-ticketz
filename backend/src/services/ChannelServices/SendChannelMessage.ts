@@ -31,23 +31,26 @@ export interface EnvioParams {
   ticket: Ticket;
   userId?: number | null;
   quotedMsg?: Message;
+  /** Quem está enviando: humano (painel) | automacao | ai. */
+  sentBy?: string;
 }
 
 export default async function SendChannelMessage({
   body,
   ticket,
   userId,
-  quotedMsg
+  quotedMsg,
+  sentBy
 }: EnvioParams): Promise<void> {
   if (isBaileys(ticket.channel)) {
     // `SendWhatsAppMessage` já persiste a mensagem (chama `verifyMessage` por
     // dentro) — não repetir aqui, senão a mensagem aparece duas vezes.
-    await SendWhatsAppMessage({ body, ticket, userId, quotedMsg });
+    await SendWhatsAppMessage({ body, ticket, userId, quotedMsg, sentBy });
     return;
   }
 
   if (isOficial(ticket.channel)) {
-    await enviarPeloOficial({ body, ticket });
+    await enviarPeloOficial({ body, ticket, sentBy });
     return;
   }
 
@@ -62,7 +65,8 @@ export default async function SendChannelMessage({
         body,
         fromMe: true,
         read: true,
-        channel: CANAL_WEBCHAT
+        channel: CANAL_WEBCHAT,
+        sentBy
       },
       companyId: ticket.companyId
     });
@@ -77,8 +81,9 @@ export default async function SendChannelMessage({
 
 async function enviarPeloOficial({
   body,
-  ticket
-}: Pick<EnvioParams, "body" | "ticket">): Promise<Message> {
+  ticket,
+  sentBy
+}: Pick<EnvioParams, "body" | "ticket" | "sentBy">): Promise<Message> {
   const conexao = await conexaoDoTicket(ticket);
   if (!conexao) {
     throw new AppError(
@@ -112,7 +117,8 @@ async function enviarPeloOficial({
       fromMe: true,
       read: true,
       ack: 1,
-      channel: ticket.channel
+      channel: ticket.channel,
+      sentBy
     },
     companyId: ticket.companyId
   });

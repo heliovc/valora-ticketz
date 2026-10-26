@@ -114,6 +114,34 @@ class Ticket extends Model<Ticket> {
   @Column(DataType.TEXT)
   referralCtwaClid: string | null;
 
+  // --- Val Vendas (IA comercial do Elo Eventos) -----------------------------
+  /** `elo_eventos` quando a conversa veio de campanha/site do Elo Eventos. */
+  @Column(DataType.STRING)
+  salesSource: string | null;
+
+  /** Por onde a origem foi reconhecida: codigo | formulario | lista | anuncio | manual. */
+  @Column(DataType.STRING)
+  salesSourceVia: string | null;
+
+  /** Código ELO-* que trouxe o lead. */
+  @Column(DataType.STRING)
+  campaignRef: string | null;
+
+  @Column(DataType.DATE)
+  attributedAt: Date | null;
+
+  /** novo | qualificado | demo_solicitada | teste_solicitado | sem_interesse | transferido */
+  @Column(DataType.STRING)
+  salesStage: string | null;
+
+  /** Resumo de 1 linha atualizado pela IA. */
+  @Column(DataType.TEXT)
+  salesSummary: string | null;
+
+  /** IA pausada nesta conversa até esta hora (humano respondeu ou #val). */
+  @Column(DataType.DATE)
+  aiPausedUntil: Date | null;
+
   @Default(false)
   @Column
   isGroup: boolean;

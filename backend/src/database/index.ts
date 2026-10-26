@@ -48,6 +48,13 @@ import Translation from "../models/Translation";
 import Wavoip from "../models/Wavoip";
 import CloudApiBroadcast from "../models/CloudApiBroadcast";
 import CloudApiBroadcastRecipient from "../models/CloudApiBroadcastRecipient";
+import {
+  SalesAiConfig,
+  CampaignRef,
+  CampaignListMember,
+  AiDecisionLog,
+  SalesPlaybookVersion
+} from "../models/SalesAi";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const dbConfig = require("../config/database");
@@ -103,7 +110,12 @@ const models = [
   Translation,
   Wavoip,
   CloudApiBroadcast,
-  CloudApiBroadcastRecipient
+  CloudApiBroadcastRecipient,
+  SalesAiConfig,
+  CampaignRef,
+  CampaignListMember,
+  AiDecisionLog,
+  SalesPlaybookVersion
 ];
 
 sequelize.addModels(models);

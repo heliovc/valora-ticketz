@@ -1,4 +1,10 @@
 import { Request, Response } from "express";
+import {
+  aplicarComandoVal,
+  escopoDeVendas,
+  pausarPorHumano
+} from "../services/SalesAiServices/SalesAiService";
+import { lerComandoVal } from "../services/SalesAiServices/salesAiRules";
 import fs from "fs";
 import AppError from "../errors/AppError";
 
@@ -84,6 +90,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const ticket = await ShowTicketService(ticketId, companyId);
   const { channel } = ticket;
+
+  // Val Vendas: "#val on/off/pausa" escrito no CRM não vai para o contato.
+  const comandoVal = !medias?.length ? lerComandoVal(body) : null;
+  if (comandoVal && (await escopoDeVendas(ticket))) {
+    const resultado = await aplicarComandoVal(ticket, comandoVal, `painel:${userId || "?"}`);
+    return res.status(200).json({ comandoVal: resultado });
+  }
+  // Envio automático da Valora (lembretes, cobrança) não conta como humano.
+  const sentBy = req.body?.origem === "automacao" ? "automacao" : "humano";
   // Só o Baileys: este bloco usa `getWbot`, que só existe para a sessão do QR.
   if (isBaileys(channel)) {
     await SetTicketMessagesAsRead(ticket);
@@ -127,8 +142,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     // previsto respondia 200 SEM ENVIAR NADA, e o atendente via a mensagem
     // sumir achando que tinha enviado. O adaptador trata cada canal e erra alto
     // no que não conhece.
-    await SendChannelMessage({ body, ticket, userId, quotedMsg });
+    await SendChannelMessage({ body, ticket, userId, quotedMsg, sentBy });
   }
+
+  // Resposta humana pelo painel pausa a IA da Val Vendas nesta conversa.
+  if (sentBy === "humano" && ticket.salesSource) await pausarPorHumano(ticket.id);
 
   return res.send();
 };

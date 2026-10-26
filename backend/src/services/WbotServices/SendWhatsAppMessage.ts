@@ -10,19 +10,23 @@ import { verifyMediaMessage, verifyMessage } from "./wbotMessageListener";
 import User from "../../models/User";
 import { getJidOf } from "./getJidOf";
 import Whatsapp from "../../models/Whatsapp";
+import { registrarEnvio } from "../SalesAiServices/SalesAiService";
 
 interface Request {
   body: string;
   ticket: Ticket;
   userId?: number;
   quotedMsg?: Message;
+  /** Quem está enviando: ai | humano | automacao. */
+  sentBy?: string;
 }
 
 const SendWhatsAppMessage = async ({
   body,
   ticket,
   userId,
-  quotedMsg
+  quotedMsg,
+  sentBy
 }: Request): Promise<WAMessage> => {
   let options = {};
 
@@ -71,6 +75,7 @@ const SendWhatsAppMessage = async ({
     );
 
     wbot.cacheMessage(sentMessage);
+    if (sentBy) registrarEnvio(sentMessage?.key?.id, sentBy);
 
     if (sentMessage?.message?.extendedTextMessage?.thumbnailDirectPath) {
       await verifyMediaMessage(sentMessage, ticket, ticket.contact, { wbot });

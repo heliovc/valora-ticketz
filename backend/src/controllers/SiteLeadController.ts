@@ -10,6 +10,7 @@ import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUp
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import FindOrCreateTicketServiceMeta from "../services/TicketServices/FindOrCreateTicketServiceMeta";
 import { logger } from "../utils/logger";
+import { CampaignRef } from "../models/SalesAi";
 
 /**
  * Lead vindo de um formulário de site (Valora): vira contato + card na
@@ -26,6 +27,8 @@ interface LeadDoSite {
   mensagem: string;
   campos?: Record<string, string>;
   etiqueta?: string;
+  /** Val Vendas: código de campanha do formulário (ex.: ELO-SITE). Marca a origem Elo Eventos. */
+  campaignRef?: string;
 }
 
 const norm = (t: string) =>
@@ -110,6 +113,20 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     if (!tag) tag = await Tag.create({ name: lead.etiqueta, color: "#22c55e", kanban: 0, companyId } as any);
     const ja = await TicketTag.findOne({ where: { ticketId: ticket.id, tagId: tag.id } });
     if (!ja) await TicketTag.create({ ticketId: ticket.id, tagId: tag.id });
+  }
+
+  if (lead.campaignRef) {
+    const codigo = String(lead.campaignRef).toUpperCase().slice(0, 48);
+    const ref = await CampaignRef.findOne({ where: { companyId, code: codigo } });
+    if (ref?.active) {
+      await ticket.update({
+        salesSource: "elo_eventos",
+        salesSourceVia: "formulario",
+        campaignRef: codigo,
+        attributedAt: new Date(),
+        salesStage: ticket.salesStage || "novo"
+      } as any);
+    }
   }
 
   logger.info(`[site-lead] empresa ${companyId}: card ${ticket.id} (${conexao.canal}) para ${numero}`);

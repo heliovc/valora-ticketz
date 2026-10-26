@@ -40,6 +40,14 @@ import {
 import { TIPOS_DE_MIDIA, baixarMidiaDaMeta, rotuloDaMidia } from "./CloudApiMediaService";
 import { sendImage, sendText } from "./CloudApiSendService";
 import { extrairAtribuicao } from "../../helpers/adReferral";
+import {
+  aplicarResposta,
+  avaliarMensagemRecebida,
+  decidir as decidirVendas,
+  escopoDeVendas,
+  promptDeVendas
+} from "../SalesAiServices/SalesAiService";
+import { SalesAiConfig } from "../../models/SalesAi";
 
 /**
  * Recebimento do WhatsApp Oficial (Meta Cloud API).
@@ -289,11 +297,59 @@ async function processarMensagem(
     await ticket.reload();
   }
 
+  // Val Vendas: decide (e registra) em toda mensagem recebida na conexão.
+  const decisaoDeVendas = await avaliarMensagemRecebida(ticket, contact, { messageId: msg.id });
+  if (decisaoDeVendas && !decisaoDeVendas.reply) return;
+
   // A resposta espera o cliente parar de digitar: várias mensagens seguidas
   // recebem uma resposta só, montada do banco quando a rajada termina.
   agruparRajada(ticket.id, () =>
     responderComBot(whatsapp, ticket.id, contact)
   );
+}
+
+/** Val Vendas no Oficial: a playbook é a persona; sem ferramentas nem ações do funil. */
+async function responderDeVendas(
+  whatsapp: Whatsapp,
+  ticket: Ticket,
+  contact: Contact,
+  cfg: SalesAiConfig
+): Promise<void> {
+  const atual = (await Contact.findByPk(contact.id)) || contact;
+  const decisao = await decidirVendas(ticket, atual, cfg);
+  if (!decisao.reply) return;
+  const { history, pendente } = separarTurnoAtual(await mensagensRecentes(ticket.id));
+  if (!pendente) return;
+  const resposta = await generateBotReply({
+    persona: await promptDeVendas(cfg),
+    knowledge: "",
+    history,
+    userMessage: pendente,
+    contactName: atual.name,
+    files: [],
+    provedores: await provedoresDaEmpresa(whatsapp.companyId)
+  });
+  if (!resposta) return;
+  const texto = await aplicarResposta(ticket, atual, cfg, resposta.text, {
+    handoff: resposta.kind === "handoff",
+    falha: !!resposta.falha
+  });
+  if (!texto) return;
+  const { wamid } = await sendText(whatsapp, atual.number, texto);
+  await CreateMessageService({
+    messageData: {
+      id: wamid,
+      ticketId: ticket.id,
+      contactId: atual.id,
+      body: texto,
+      fromMe: true,
+      read: true,
+      ack: 1,
+      channel: CHANNEL,
+      sentBy: "ai"
+    },
+    companyId: whatsapp.companyId
+  });
 }
 
 /**
@@ -313,6 +369,15 @@ async function responderComBot(
   // atendente pode ter assumido ou o funil desligado o bot.
   const ticket = await Ticket.findByPk(ticketId);
   if (!ticket) return;
+  const vendas = await escopoDeVendas(ticket);
+  if (vendas) {
+    try {
+      await responderDeVendas(whatsapp, ticket, contact, vendas);
+    } catch (err: any) {
+      logger.error({ ticketId, message: err?.message }, "[val-vendas] Oficial: não respondeu");
+    }
+    return;
+  }
   const daEmpresa =
     (await GetCompanySetting(companyId, "aiBotEnabled", "disabled")) === "enabled";
 
@@ -370,7 +435,8 @@ async function responderComBot(
           fromMe: true,
           read: true,
           ack: 1,
-          channel: CHANNEL
+          channel: CHANNEL,
+          sentBy: "ai"
         },
         companyId
       });
@@ -397,7 +463,8 @@ async function responderComBot(
       });
     }
     if (depois) await enviarTexto(depois);
-    if (resposta.kind === "handoff" && !resposta.falha) await passarParaHumano(ticket.id, companyId);
+    // Falha também passa para humano: avisa uma vez, em vez de repetir a cada mensagem.
+    if (resposta.kind === "handoff") await passarParaHumano(ticket.id, companyId);
   } catch (err: any) {
     // Bot que falha deixa a conversa para o humano — nunca derruba o webhook.
     Sentry.captureException(err);
