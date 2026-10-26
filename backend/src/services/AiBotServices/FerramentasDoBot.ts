@@ -29,6 +29,13 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
       "- PRE_RESERVAR — guarda a data por um prazo, sem compromisso, DEPOIS que o cliente disser que quer. Nunca pré-reserve sem o cliente pedir.",
       '  Comando: [[PRE_RESERVAR data="dd/mm/aaaa" salao="nome do salão" turno="nome do turno (só em festa com turno)"]]'
     ].join("\n")
+  },
+  proposta: {
+    nomes: ["GERAR_PROPOSTA"],
+    texto: [
+      "- GERAR_PROPOSTA — monta a proposta com o preço da tabela para o tipo de festa, a data e o número de convidados já salvos, e devolve o LINK para o cliente. Use quando o cliente quiser saber valores ou pedir a proposta. Nunca diga um preço sem ela.",
+      '  Comando: [[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="nome do pacote (opcional: vazio traz todas as opções)"]]'
+    ].join("\n")
   }
 };
 
@@ -74,7 +81,11 @@ export async function ferramentasDoBot(
     const salvo = (nome: string) => campos.find(c => c.name === nome)?.value || undefined;
     const resultados: string[] = [];
     for (const ch of chamadas) {
-      const rota = ch.nome === "CONSULTAR_AGENDA" ? "agenda/consultar" : ch.nome === "PRE_RESERVAR" ? "agenda/pre-reservar" : null;
+      const rota =
+        ch.nome === "CONSULTAR_AGENDA" ? "agenda/consultar"
+        : ch.nome === "PRE_RESERVAR" ? "agenda/pre-reservar"
+        : ch.nome === "GERAR_PROPOSTA" ? "proposta/gerar"
+        : null;
       if (!rota) continue;
       const corpo = {
         tenantId,
@@ -85,7 +96,8 @@ export async function ferramentasDoBot(
         tipo: ch.args.tipo || salvo("tipo_festa"),
         convidados: ch.args.convidados || salvo("convidados"),
         salao: ch.args.salao,
-        turno: ch.args.turno
+        turno: ch.args.turno,
+        pacote: ch.args.pacote
       };
       try {
         // eslint-disable-next-line no-await-in-loop
