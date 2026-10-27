@@ -320,3 +320,56 @@ export function blocoDeQualificacao(
   if (nota) linhas.push("", `Nota atual do lead: ${nota}.`);
   return linhas.join("\n");
 }
+
+// ───────────── Leitura do histórico ─────────────
+
+const temPalavra = (texto: string, termo: string): boolean => {
+  const t = normal(termo);
+  if (!t || /^\d+$/.test(t)) return false; // número solto ("15") não decide nada: "seremos 150"
+  return new RegExp(`(^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(texto);
+};
+
+/**
+ * Dados que o CLIENTE já disse nas mensagens dele e que ainda estão vazios —
+ * sem depender do modelo lembrar de salvar. Só o que é inequívoco:
+ * - opção (ex.: tipo de festa) por palavra inteira, nunca por número solto;
+ * - data com nome de mês ou no formato dd/mm/aaaa ou mm/aaaa;
+ * - número só quando vem com "pessoas" ou "convidados".
+ * A mensagem mais recente vence. Nasceu da conversa "Mariana" (27/10/2026):
+ * ela disse "casamento em março do ano que vem" e a IA perguntou de novo.
+ */
+export function extrairDoHistorico(
+  campos: CampoQualificavel[],
+  salvos: Record<string, string>,
+  mensagensDoCliente: string[],
+  hoje = new Date()
+): Record<string, string> {
+  const achados: Record<string, string> = {};
+  const vazios = campos.filter(c => !valorSalvo(salvos, c.nome));
+  for (const bruto of mensagensDoCliente) {
+    const t = normal(bruto).replace(/\s+/g, " ");
+    if (!t) continue;
+    for (const c of vazios) {
+      if (c.tipo === "opcao" && c.opcoes?.length) {
+        const op = c.opcoes.find(o => {
+          const alvo = normal(o);
+          const sin = SINONIMOS[alvo] || SINONIMOS[alvo.replace(/\s+/g, "_")] || [];
+          return temPalavra(t, alvo.replace(/_/g, " ")) || sin.some(x => temPalavra(t, x));
+        });
+        if (op) achados[c.nome] = op;
+      } else if (c.tipo === "data") {
+        const temMes = t.split(/[^a-z]+/).some(w => MESES[w]);
+        const temFormato = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b\d{1,2}\/\d{4}\b/.test(t);
+        if (temMes || temFormato) {
+          const iso = interpretarData(t, hoje);
+          if (iso) achados[c.nome] = iso;
+        }
+      } else if (c.tipo === "numero" && /convidad|pessoa/.test(normal(c.nome + " " + c.descricao))) {
+        const m = t.match(/(\d{2,4})\s*(?:pessoas|convidados)/);
+        if (m) achados[c.nome] = String(Number(m[1]));
+      }
+    }
+  }
+  return achados;
+}
+

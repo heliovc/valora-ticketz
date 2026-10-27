@@ -4,6 +4,7 @@ import ContactCustomField from "../../models/ContactCustomField";
 import Setting from "../../models/Setting";
 import Tag from "../../models/Tag";
 import Ticket from "../../models/Ticket";
+import Message from "../../models/Message";
 import TicketTag from "../../models/TicketTag";
 import Whatsapp from "../../models/Whatsapp";
 import AppError from "../../errors/AppError";
@@ -15,6 +16,7 @@ import {
   NotaDoLead,
   blocoDeQualificacao,
   estadoDaQualificacao,
+  extrairDoHistorico,
   notaDoLead,
   temQualificacao,
   validarValor
@@ -170,6 +172,29 @@ export async function contextoDeAcoes(ticketId: number, companyId: number): Prom
   const qualificando = temQualificacao(campos);
   if (campos.length) {
     const ctx = qualificando ? await contextoDeNota(companyId) : {};
+    // O que o cliente já disse e ninguém salvou: o sistema grava antes de o
+    // modelo decidir a próxima pergunta, para ela não se repetir.
+    if (qualificando) {
+      try {
+        const recentes = await Message.findAll({
+          where: { ticketId: ticket.id, fromMe: false },
+          order: [["createdAt", "DESC"]],
+          limit: 20,
+          attributes: ["body"]
+        });
+        const textos = recentes.map(m => String(m.body || "")).reverse();
+        const achados = extrairDoHistorico(campos, salvos, textos);
+        for (const [nome, valor] of Object.entries(achados)) {
+          // eslint-disable-next-line no-await-in-loop
+          await gravarCampo(ticket.contactId, nome, valor);
+          salvos[nome] = valor;
+          logger.info(`[aiBot] lido do histórico ticket=${ticket.id}: ${nome} = ${valor}`);
+        }
+        if (Object.keys(achados).length) await atualizarNotaDoLead(ticket, ticket.contactId, campos);
+      } catch (err) {
+        logger.warn({ err, ticketId: ticket.id }, "[aiBot] leitura do histórico falhou");
+      }
+    }
     const estado = qualificando ? estadoDaQualificacao(campos, salvos, ctx.seletor) : null;
     // Com qualificação, o modelo só vê os campos que valem para este lead.
     const visiveis = estado ? estado.aplicaveis : campos;

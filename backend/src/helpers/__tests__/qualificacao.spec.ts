@@ -2,6 +2,7 @@ import {
   CampoQualificavel,
   blocoDeQualificacao,
   estadoDaQualificacao,
+  extrairDoHistorico,
   interpretarData,
   interpretarMoeda,
   interpretarNumero,
@@ -129,3 +130,21 @@ describe("nota do lead", () => {
     expect(notaDoLead({ tipo_festa: "casamento", data_festa: "2027-03-14", convidados: "300" }, ctx, HOJE)).toBe("morno");
   });
 });
+
+describe("leitura do histórico", () => {
+  it("conversa Mariana: tipo e mês saem da primeira mensagem", () => {
+    const r = extrairDoHistorico(CAMPOS, { nome: "Mariana" }, ["Estou planejando meu casamento para março do ano que vem", "Mariana", "Que dias tem livres?"], HOJE);
+    expect(r.tipo_festa).toBe("casamento");
+    expect(r.data_festa).toBe("2027-03");
+  });
+  it("número solto não vira 15 anos nem convidados", () => {
+    const r = extrairDoHistorico(CAMPOS, {}, ["seremos 150", "festa para 120 pessoas"], HOJE);
+    expect(r.tipo_festa).toBeUndefined();
+    expect(r.convidados).toBe("120");
+  });
+  it("não sobrescreve o que já está salvo", () => {
+    const r = extrairDoHistorico(CAMPOS, { tipo_festa: "infantil" }, ["na verdade é casamento"], HOJE);
+    expect(r.tipo_festa).toBeUndefined();
+  });
+});
+
