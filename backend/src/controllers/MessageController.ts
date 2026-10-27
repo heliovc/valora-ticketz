@@ -105,11 +105,21 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     if (!ticket.isGroup) {
       const contact = await ShowContactService(ticket.contactId, companyId);
       if (!contact.number.includes("@") && !contact.whatsappLidMap) {
+        // Número fixo ou digitado errado: o WhatsApp diz que não existe. Sem
+        // isto o atendente via "internal server error" a cada envio.
         await verifyContact(
           { id: `${contact.number}@s.whatsapp.net`, name: contact.name },
           getWbot(ticket.whatsappId),
           companyId
-        );
+        ).catch(err => {
+          if (err?.message === "ERR_WAPP_CONTACT_NOT_FOUND") {
+            throw new AppError(
+              `O número ${contact.number} não tem WhatsApp (pode ser fixo ou estar errado). Corrija o número do contato para conseguir enviar.`,
+              400
+            );
+          }
+          throw err;
+        });
         await ticket.reload();
       }
     }

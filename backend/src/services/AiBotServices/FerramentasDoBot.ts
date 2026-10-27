@@ -24,7 +24,7 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
   agenda: {
     nomes: ["CONSULTAR_AGENDA", "PRE_RESERVAR"],
     texto: [
-      "- CONSULTAR_AGENDA — confere se uma data está livre nos salões e, se não estiver, traz datas alternativas. Se o cliente só disse o MÊS, consulta o mês inteiro e devolve as datas livres. Use assim que souber a data ou o mês, e SEMPRE que o cliente perguntar que datas tem. Precisa do tipo de festa; com o número de convidados a resposta fica mais certa.",
+      "- CONSULTAR_AGENDA — confere se uma data está livre nos salões e, se não estiver, traz datas alternativas. Se o cliente só disse o MÊS, consulta o mês inteiro e devolve as datas livres. Use assim que souber a data ou o mês, e SEMPRE que o cliente perguntar que datas tem — NA HORA, mesmo sem o número de convidados: nunca peça os convidados antes de consultar. Mostre as datas e só depois pergunte os convidados (com eles a resposta fica mais certa).",
       '  Comando com data: [[CONSULTAR_AGENDA data="dd/mm/aaaa"]]',
       '  Comando só com o mês: [[CONSULTAR_AGENDA mes="mm/aaaa"]]',
       "- PRE_RESERVAR — guarda a data por um prazo, sem compromisso, DEPOIS que o cliente disser que quer. Nunca pré-reserve sem o cliente pedir.",
