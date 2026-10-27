@@ -53,6 +53,7 @@ const GEMINI_API_BASE =
 const GEMINI_THINKING = (process.env.AI_BOT_GEMINI_THINKING || "0").trim().toLowerCase();
 /** O visitante está esperando no widget: melhor errar por cortar cedo. */
 const GEMINI_TIMEOUT_MS = Number(process.env.AI_BOT_GEMINI_TIMEOUT_MS || 15000);
+const OPENROUTER_TIMEOUT_MS = Number(process.env.AI_BOT_OPENROUTER_TIMEOUT_MS || 45000);
 /**
  * A camada gratuita recusa por fila (503) e por cota de minuto (429), e volta
  * em seguida. Sem isso, um pico momentâneo vira "o bot parou de responder".
@@ -490,6 +491,27 @@ async function callCompativelOpenAI(
 ): Promise<string> {
   const extras: Record<string, string> =
     qual === "openrouter" ? { "HTTP-Referer": "https://valorasolucoes.com", "X-Title": "Valora Elo" } : {};
+  // Modelo gratuito do OpenRouter às vezes devolve 200 SEM texto (fila do
+  // fornecedor, erro no corpo). Antes isso virava "vou chamar uma pessoa" sem
+  // nenhum log; agora tenta mais uma vez e, vazio de novo, erra alto para o
+  // próximo da lista assumir.
+  for (let tentativa = 1; ; tentativa += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const texto = await chamarCompativelUmaVez(qual, systemText, turns, apiKey, model, extras);
+    if (texto.texto) return texto.texto;
+    if (tentativa >= 2) throw new Error(`resposta vazia de ${qual}: ${texto.corpo}`);
+    logger.warn({ provider: qual, corpo: texto.corpo }, "[aiBot] resposta vazia; tentando de novo");
+  }
+}
+
+async function chamarCompativelUmaVez(
+  qual: "groq" | "openrouter",
+  systemText: string,
+  turns: BotTurn[],
+  apiKey: string,
+  model: string,
+  extras: Record<string, string>
+): Promise<{ texto: string; corpo: string }> {
   const { data } = await axios.post(
     URL_COMPATIVEL[qual],
     {
@@ -503,11 +525,14 @@ async function callCompativelOpenAI(
     },
     {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...extras },
-      timeout: GEMINI_TIMEOUT_MS
+      // O gratuito do OpenRouter leva de 14 a 65 s por resposta (medido em 27/10):
+      // com os 15 s do Gemini ele caía sempre por tempo.
+      timeout: qual === "openrouter" ? OPENROUTER_TIMEOUT_MS : GEMINI_TIMEOUT_MS
     }
   );
   // Modelos de raciocínio às vezes devolvem o pensamento entre <think>…</think>: nunca vai ao cliente.
-  return String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const texto = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  return { texto, corpo: texto ? "" : JSON.stringify(data || "").slice(0, 300) };
 }
 
 /** Uma chamada ao provedor indicado. Erro sobe — quem chama passa ao próximo. */
