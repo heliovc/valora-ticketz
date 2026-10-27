@@ -22,7 +22,7 @@ import {
  * aparece na tela de ninguém.
  */
 const CHAVE = "aiBotProviders";
-const NOMES: NomeDoProvedor[] = ["gemini", "groq", "anthropic"];
+const NOMES: NomeDoProvedor[] = ["gemini", "groq", "anthropic", "openrouter"];
 const MAX = 4;
 
 type Gravado = { provider: NomeDoProvedor; model: string; keyEnc: string; final: string };

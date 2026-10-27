@@ -162,7 +162,7 @@ export type GenerateBotReplyParams = {
   ferramentas?: FerramentasParaOBot;
 };
 
-export type NomeDoProvedor = "gemini" | "groq" | "anthropic";
+export type NomeDoProvedor = "gemini" | "groq" | "anthropic" | "openrouter";
 
 /** Um modelo configurado pela empresa, com a chave já decifrada. */
 export type ProvedorDoBot = {
@@ -175,7 +175,10 @@ export type ProvedorDoBot = {
 export const MODELO_PADRAO: Record<NomeDoProvedor, string> = {
   gemini: "gemini-2.5-flash-lite",
   groq: "qwen/qwen3.8-27b",
-  anthropic: "claude-haiku-4-5"
+  anthropic: "claude-haiku-4-5",
+  // Modelo gratuito do OpenRouter (27/10/2026). Sem crédito comprado: 50 pedidos/dia;
+  // com 10 dólares de crédito, 1.000/dia (openrouter.ai/docs/api-reference/limits).
+  openrouter: "nvidia/nemotron-3-ultra-550b-a55b:free"
 };
 
 const clientesAnthropic = new Map<string, Anthropic>();
@@ -470,18 +473,27 @@ async function callGemini(
 }
 
 /**
- * Groq (API compatível com a da OpenAI). Modelo padrão: Llama 3.3 70B.
+ * Provedores com API compatível com a da OpenAI: Groq e OpenRouter. Muda só o
+ * endereço e o modelo padrão.
  */
-async function callGroq(
+const URL_COMPATIVEL: Record<"groq" | "openrouter", string> = {
+  groq: "https://api.groq.com/openai/v1/chat/completions",
+  openrouter: "https://openrouter.ai/api/v1/chat/completions"
+};
+
+async function callCompativelOpenAI(
+  qual: "groq" | "openrouter",
   systemText: string,
   turns: BotTurn[],
   apiKey: string,
   model: string
 ): Promise<string> {
+  const extras: Record<string, string> =
+    qual === "openrouter" ? { "HTTP-Referer": "https://valorasolucoes.com", "X-Title": "Valora Elo" } : {};
   const { data } = await axios.post(
-    "https://api.groq.com/openai/v1/chat/completions",
+    URL_COMPATIVEL[qual],
     {
-      model: model || MODELO_PADRAO.groq,
+      model: model || MODELO_PADRAO[qual],
       max_tokens: MAX_TOKENS,
       temperature: 0.4,
       messages: [
@@ -490,11 +502,12 @@ async function callGroq(
       ]
     },
     {
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...extras },
       timeout: GEMINI_TIMEOUT_MS
     }
   );
-  return String(data?.choices?.[0]?.message?.content || "").trim();
+  // Modelos de raciocínio às vezes devolvem o pensamento entre <think>…</think>: nunca vai ao cliente.
+  return String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
 /** Uma chamada ao provedor indicado. Erro sobe — quem chama passa ao próximo. */
@@ -505,7 +518,9 @@ export async function chamarProvedor(
 ): Promise<string> {
   const model = provedor.model || MODELO_PADRAO[provedor.provider];
   if (provedor.provider === "gemini") return callGemini(systemText, turns, provedor.apiKey, model);
-  if (provedor.provider === "groq") return callGroq(systemText, turns, provedor.apiKey, model);
+  if (provedor.provider === "groq" || provedor.provider === "openrouter") {
+    return callCompativelOpenAI(provedor.provider, systemText, turns, provedor.apiKey, model);
+  }
   return callAnthropic(systemText, turns, provedor.apiKey, model);
 }
 
