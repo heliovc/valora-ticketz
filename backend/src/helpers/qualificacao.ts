@@ -124,6 +124,10 @@ export function interpretarData(bruto: string, hoje = new Date()): string | null
   const t = normal(bruto).replace(/\s+/g, " ");
   let m = t.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return `${m[1]}-${pad(+m[2])}-${pad(+m[3])}`;
+  // O próprio formato que esta função devolve para "só o mês" (AAAA-MM): sem
+  // isso, o modelo salvava "2027-03" e na mensagem seguinte o valor era recusado.
+  m = t.match(/^(\d{4})-(\d{1,2})$/);
+  if (m && +m[2] >= 1 && +m[2] <= 12) return `${m[1]}-${pad(+m[2])}`;
   m = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (m) return `${anoDeDoisDigitos(+m[3])}-${pad(+m[2])}-${pad(+m[1])}`;
   m = t.match(/(\d{1,2}) de ([a-z]+)(?: de (\d{4}))?/);
@@ -244,9 +248,10 @@ export function validarValor(campo: CampoQualificavel, bruto: string, hoje = new
 // ───────────── Nota do lead ─────────────
 
 /**
- * quente = data em até 12 meses + convidados dentro da capacidade + orçamento
- * acima do piso · morno = falta UM · frio = sem data (ou falta mais de um).
- * `null` = ainda não dá para dizer (faltam convidados ou orçamento).
+ * quente = data em até 12 meses + convidados dentro da capacidade (+ orçamento
+ * acima do piso, SE o orçamento foi informado) · morno = falta UM · frio = sem
+ * data (ou falta mais de um). `null` = ainda não dá para dizer (faltam convidados).
+ * Orçamento virou opcional em 27/10/2026: o Elo Eventos não pergunta mais.
  */
 export function notaDoLead(
   salvos: Record<string, string>,
@@ -258,7 +263,7 @@ export function notaDoLead(
   const data = valorSalvo(salvos, ctx.campoData || "data_festa");
   const convidados = interpretarNumero(valorSalvo(salvos, ctx.campoConvidados || "convidados"));
   const orcamento = interpretarMoeda(valorSalvo(salvos, ctx.campoOrcamento || "orcamento"));
-  if (convidados === null || orcamento === null) return null;
+  if (convidados === null) return null;
 
   let dataOk = false;
   const iso = interpretarData(data, hoje);
@@ -273,7 +278,7 @@ export function notaDoLead(
   const capacidade = tipo && ctx.capacidade ? ctx.capacidade[tipo] : undefined;
   const piso = tipo && ctx.piso ? ctx.piso[tipo] : undefined;
   const capacidadeOk = capacidade === undefined || convidados <= capacidade;
-  const orcamentoOk = piso === undefined || orcamento >= piso;
+  const orcamentoOk = orcamento === null || piso === undefined || orcamento >= piso;
   if (!iso) return "frio";
   const faltas = [dataOk, capacidadeOk, orcamentoOk].filter(ok => !ok).length;
   if (faltas === 0) return "quente";
@@ -303,10 +308,11 @@ export function blocoDeQualificacao(
       "",
       `PRÓXIMA PERGUNTA: ${p.nome} — ${p.descricao}${p.opcoes?.length ? ` Opções: ${p.opcoes.join(", ")}.` : ""}`,
       "Regras:",
-      "- Faça SÓ essa pergunta agora, de forma natural e curta. Nunca pergunte dois dados na mesma mensagem.",
-      "- Se o cliente já respondeu esse dado na mensagem atual, grave com SALVAR e faça a pergunta seguinte da lista.",
-      "- Nunca pergunte de novo o que já está marcado com ✔.",
-      "- Se o cliente perguntar algo no meio, responda e volte para a pergunta da vez."
+      "- Antes de perguntar, releia a CONVERSA INTEIRA. Se o cliente já informou qualquer dado da lista, nesta mensagem ou em mensagens anteriores, grave cada um com SALVAR e NÃO pergunte de novo: passe para o próximo que realmente falta.",
+      "- Se o cliente fez uma pergunta (datas livres, pacotes, valores, como funciona), RESPONDA PRIMEIRO, usando a ferramenta quando houver, e só depois faça a pergunta da vez.",
+      "- Nunca condicione uma resposta a um dado de cadastro. Responder a dúvida vem antes de completar a ficha.",
+      "- Faça SÓ uma pergunta por mensagem, de forma natural e curta.",
+      "- Nunca pergunte de novo o que já está marcado com ✔."
     );
   } else if (estado.aplicaveis.length) {
     linhas.push("", "Qualificação completa: não falta dado. Não faça mais perguntas de cadastro; siga o foco da etapa.");

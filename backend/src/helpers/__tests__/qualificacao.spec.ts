@@ -62,6 +62,13 @@ describe("próxima pergunta", () => {
     expect(bloco).toContain("Opções: casamento, 15_anos, infantil");
     expect(bloco).toContain("- nome: Renata ✔");
   });
+
+  it("o bloco manda reler a conversa inteira e responder a dúvida antes de perguntar", () => {
+    const e = estadoDaQualificacao(CAMPOS, { nome: "Mariana" });
+    const bloco = blocoDeQualificacao(e, { nome: "Mariana" }, null);
+    expect(bloco).toContain("CONVERSA INTEIRA");
+    expect(bloco).toContain("RESPONDA PRIMEIRO");
+  });
 });
 
 describe("validação por tipo", () => {
@@ -71,6 +78,8 @@ describe("validação por tipo", () => {
     expect(interpretarData("14 de março de 2027", HOJE)).toBe("2027-03-14");
     expect(interpretarData("março de 2027", HOJE)).toBe("2027-03");
     expect(interpretarData("03/2027", HOJE)).toBe("2027-03");
+    // o próprio valor salvo volta a ser aceito (antes: "2027-03 não é uma data")
+    expect(interpretarData("2027-03", HOJE)).toBe("2027-03");
     expect(interpretarData("dia 14/03", HOJE)).toBe("2027-03-14"); // já passou em 2026 → próximo ano
     expect(interpretarData("em dezembro", HOJE)).toBe("2026-12");
     expect(interpretarData("ainda não sei", HOJE)).toBeNull();
@@ -112,7 +121,11 @@ describe("nota do lead", () => {
     expect(notaDoLead({ tipo_festa: "casamento", data_festa: "ainda não sei", convidados: "120", orcamento: "30000" }, ctx, HOJE)).toBe("frio");
     expect(notaDoLead({ tipo_festa: "casamento", data_festa: "2028-06-10", convidados: "300", orcamento: "5000" }, ctx, HOJE)).toBe("frio");
   });
-  it("sem convidados ou orçamento ainda não dá nota", () => {
+  it("sem convidados ainda não dá nota", () => {
     expect(notaDoLead({ tipo_festa: "casamento", data_festa: "2027-03-14" }, ctx, HOJE)).toBeNull();
+  });
+  it("sem orçamento a nota sai só com data e convidados (o Elo Eventos não pergunta mais)", () => {
+    expect(notaDoLead({ tipo_festa: "casamento", data_festa: "2027-03-14", convidados: "120" }, ctx, HOJE)).toBe("quente");
+    expect(notaDoLead({ tipo_festa: "casamento", data_festa: "2027-03-14", convidados: "300" }, ctx, HOJE)).toBe("morno");
   });
 });

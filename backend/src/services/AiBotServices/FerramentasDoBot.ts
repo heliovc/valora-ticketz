@@ -24,8 +24,9 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
   agenda: {
     nomes: ["CONSULTAR_AGENDA", "PRE_RESERVAR"],
     texto: [
-      "- CONSULTAR_AGENDA — confere se uma data está livre nos salões e, se não estiver, traz datas alternativas. Use assim que souber a data (ou quando o cliente perguntar se tem vaga). Precisa do tipo de festa e do número de convidados já salvos; se faltarem, pergunte antes.",
-      '  Comando: [[CONSULTAR_AGENDA data="dd/mm/aaaa"]]',
+      "- CONSULTAR_AGENDA — confere se uma data está livre nos salões e, se não estiver, traz datas alternativas. Se o cliente só disse o MÊS, consulta o mês inteiro e devolve as datas livres. Use assim que souber a data ou o mês, e SEMPRE que o cliente perguntar que datas tem. Precisa do tipo de festa; com o número de convidados a resposta fica mais certa.",
+      '  Comando com data: [[CONSULTAR_AGENDA data="dd/mm/aaaa"]]',
+      '  Comando só com o mês: [[CONSULTAR_AGENDA mes="mm/aaaa"]]',
       "- PRE_RESERVAR — guarda a data por um prazo, sem compromisso, DEPOIS que o cliente disser que quer. Nunca pré-reserve sem o cliente pedir.",
       '  Comando: [[PRE_RESERVAR data="dd/mm/aaaa" salao="nome do salão" turno="nome do turno (só em festa com turno)"]]'
     ].join("\n")
@@ -95,7 +96,9 @@ export async function ferramentasDoBot(
         ticketId,
         contatoNome: contato?.name,
         contatoNumero: contato?.number,
-        data: ch.args.data,
+        data: ch.args.data || (/^\d{4}-\d{2}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
+        // Só o mês (o cliente disse "março do ano que vem"): a Valora devolve as datas livres do mês.
+        mes: ch.args.mes || (!ch.args.data && /^\d{4}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
         tipo: ch.args.tipo || salvo("tipo_festa"),
         convidados: ch.args.convidados || salvo("convidados"),
         salao: ch.args.salao,
