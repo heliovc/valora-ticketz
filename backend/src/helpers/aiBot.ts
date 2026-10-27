@@ -518,6 +518,10 @@ async function chamarCompativelUmaVez(
       model: model || MODELO_PADRAO[qual],
       max_tokens: MAX_TOKENS,
       temperature: 0.4,
+      // Nemotron (e outros de raciocínio) escreviam o pensamento em inglês no
+      // texto da resposta, sem marcação, e ele ia para o cliente. Desligado, a
+      // resposta caiu de ~21 s para ~2 s (medido em 27/10).
+      ...(qual === "openrouter" ? { reasoning: { enabled: false } } : {}),
       messages: [
         { role: "system", content: systemText },
         ...turns.map(turn => ({ role: turn.role, content: turn.text }))
