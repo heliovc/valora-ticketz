@@ -39,7 +39,27 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
       "- COBRAR_SINAL — DEPOIS que o cliente disser que quer fechar: aceita a proposta (a opção escolhida) e devolve o Pix do sinal para você enviar. Nunca use sem o cliente pedir para fechar.",
       '  Comando: [[COBRAR_SINAL pacote="nome do pacote (só se a proposta tiver mais de uma opção)"]]'
     ].join("\n")
+  },
+  // Agenda de horários (salão, barbearia, estética): serviço + dia + hora + profissional.
+  horarios: {
+    nomes: ["CONSULTAR_HORARIOS", "RESERVAR_HORARIO"],
+    texto: [
+      "- CONSULTAR_HORARIOS — traz os horários livres de um serviço num dia (ou os próximos dias com vaga), com duração, preço e o sinal, se houver. Sem o serviço, devolve a lista de serviços. Use SEMPRE que o cliente perguntar por horário, dia livre, serviços ou preços.",
+      '  Comando: [[CONSULTAR_HORARIOS servico="nome do serviço" data="dd/mm/aaaa (opcional)" profissional="nome (opcional)"]]',
+      "- RESERVAR_HORARIO — DEPOIS que o cliente escolher serviço, dia e hora: reserva e, se a agenda cobra sinal, envia o Pix na conversa e o horário só se confirma quando o Pix cair. Nunca reserve sem o cliente escolher.",
+      '  Comando: [[RESERVAR_HORARIO servico="nome do serviço" data="dd/mm/aaaa" hora="hh:mm" profissional="nome (opcional)"]]'
+    ].join("\n")
   }
+};
+
+/** Porta interna da Valora de cada ferramenta. */
+const ROTAS: Record<string, string> = {
+  CONSULTAR_AGENDA: "eventos/agenda/consultar",
+  PRE_RESERVAR: "eventos/agenda/pre-reservar",
+  GERAR_PROPOSTA: "eventos/proposta/gerar",
+  COBRAR_SINAL: "eventos/proposta/aceitar-e-cobrar",
+  CONSULTAR_HORARIOS: "agenda/consultar",
+  RESERVAR_HORARIO: "agenda/reservar"
 };
 
 async function ferramentasLigadas(companyId: number): Promise<string[]> {
@@ -74,7 +94,7 @@ export async function ferramentasDoBot(
     "FERRAMENTAS — o sistema executa e te devolve o resultado ANTES da sua resposta final:",
     ...ligadas.map(n => CATALOGO[n].texto),
     "Quando usar uma ferramenta, escreva SÓ o comando dela (mais os comandos SALVAR que couberem), sem texto para o cliente: o resultado volta para você e aí você escreve a resposta.",
-    "Nunca invente disponibilidade: só afirme que uma data está livre ou ocupada depois do resultado de CONSULTAR_AGENDA."
+    "Nunca invente disponibilidade: só afirme que uma data ou horário está livre ou ocupado depois do resultado da ferramenta de consulta."
   ].join("\n");
 
   const executar = async (chamadas: ChamadaDeFerramenta[]): Promise<string> => {
@@ -84,12 +104,7 @@ export async function ferramentasDoBot(
     const salvo = (nome: string) => campos.find(c => c.name === nome)?.value || undefined;
     const resultados: string[] = [];
     for (const ch of chamadas) {
-      const rota =
-        ch.nome === "CONSULTAR_AGENDA" ? "agenda/consultar"
-        : ch.nome === "PRE_RESERVAR" ? "agenda/pre-reservar"
-        : ch.nome === "GERAR_PROPOSTA" ? "proposta/gerar"
-        : ch.nome === "COBRAR_SINAL" ? "proposta/aceitar-e-cobrar"
-        : null;
+      const rota = ROTAS[ch.nome];
       if (!rota) continue;
       const corpo = {
         tenantId,
@@ -103,11 +118,14 @@ export async function ferramentasDoBot(
         convidados: ch.args.convidados || salvo("convidados"),
         salao: ch.args.salao,
         turno: ch.args.turno,
-        pacote: ch.args.pacote
+        pacote: ch.args.pacote,
+        servico: ch.args.servico,
+        hora: ch.args.hora,
+        profissional: ch.args.profissional
       };
       try {
         // eslint-disable-next-line no-await-in-loop
-        const { data } = await axios.post(`${base.replace(/\/$/, "")}/internal/eventos/${rota}`, corpo, {
+        const { data } = await axios.post(`${base.replace(/\/$/, "")}/internal/${rota}`, corpo, {
           headers: { "x-internal-secret": segredo },
           timeout: 20000
         });
