@@ -28,7 +28,12 @@ export async function passarParaHumano(
     if (!ticket || ticket.aiBotEnabled === false) return;
     await ticket.update({ aiBotEnabled: false } as any);
     await ticket.reload();
-    websocketUpdateTicket(ticket);
+    try {
+      websocketUpdateTicket(ticket);
+    } catch (err: any) {
+      // Painel sem socket não pode impedir a nota e o gatilho logo abaixo.
+      logger.warn({ ticketId, message: err?.message }, "[aiBot] aviso em tempo real do card falhou");
+    }
     const motivo = opcoes.falha
       ? "a IA não conseguiu responder (modelos de IA fora do ar ou sem cota)"
       : opcoes.motivo || "o cliente pediu uma pessoa ou a IA não soube responder";
