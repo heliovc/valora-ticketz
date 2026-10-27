@@ -65,6 +65,13 @@ const MAX_TOKENS = Number(process.env.AI_BOT_MAX_TOKENS || 600);
 /** Rodadas de ferramenta por resposta: uma consulta e uma reserva, no máximo. */
 const MAX_RODADAS_DE_FERRAMENTAS = 2;
 const HANDOFF_TOKEN = "__HUMANO__";
+/**
+ * `[[HUMANO motivo="…"]]`: a IA passa para a equipe SEM perder o que escreveu
+ * ("vou transferir para o responsável") nem os MOVER/SALVAR da mesma resposta.
+ * É o que permite a regra em linguagem natural na Personalidade.
+ */
+const COMANDO_HUMANO = /\[\[\s*HUMANO\b([^\]]*)\]\]/gi;
+const COMANDOS_DE_ACAO = /\[\[\s*(?:MOVER|SALVAR)\b[^\]]*\]\]/gi;
 
 /**
  * O que o cliente recebe quando o bot sai de cena. Silêncio aqui é o pior
@@ -127,6 +134,8 @@ export type BotReply = {
    * tenta de novo.
    */
   falha?: boolean;
+  /** Por que a IA passou para a equipe (do `[[HUMANO motivo="…"]]`). */
+  motivo?: string;
 };
 
 export type GenerateBotReplyParams = {
@@ -274,7 +283,7 @@ export function buildSystemPrompt(
       "- Responda em português do Brasil, com mensagens curtas e cordiais, adequadas ao WhatsApp.",
       "- Use SOMENTE as informações da base de conhecimento abaixo. Nunca invente preços, prazos, políticas ou dados que não estejam nela.",
       "- Não prometa nada que dependa de aprovação humana sem deixar claro que será confirmado.",
-      `- Se o cliente pedir para falar com um humano/atendente, ou se você não tiver informação segura para responder, responda APENAS com o token exato ${HANDOFF_TOKEN} e nada mais.`,
+      `- Se o cliente pedir para falar com um humano/atendente, se uma regra das instruções acima mandar transferir, ou se você não tiver informação segura para responder: escreva a sua mensagem ao cliente (ex.: que vai chamar o responsável) e, numa linha separada, o comando [[HUMANO motivo="em poucas palavras, por que"]]. Se a regra disser para qual lista mover o card, escreva também o [[MOVER lista="…"]]. O sistema apaga os comandos antes de enviar.`,
       nome
         ? `- O cliente se chama ${nome}. Escreva o nome assim, com inicial maiúscula.`
         : "",
@@ -482,6 +491,30 @@ const URL_COMPATIVEL: Record<"groq" | "openrouter", string> = {
   openrouter: "https://openrouter.ai/api/v1/chat/completions"
 };
 
+/**
+ * A resposta pede a passagem para a equipe? `[[HUMANO]]` mantém o texto da IA;
+ * o token antigo `__HUMANO__` usa a mensagem de espera padrão. Em ambos os
+ * casos os MOVER/SALVAR escritos junto seguem para execução.
+ */
+export function lerPassagemParaHumano(
+  text: string
+): { texto: string; comandos: string[]; motivo?: string } | null {
+  const bruto = String(text || "");
+  const comando = Array.from(bruto.matchAll(COMANDO_HUMANO))[0];
+  const token = bruto.includes(HANDOFF_TOKEN);
+  if (!comando && !token) return null;
+  const motivo = comando ? /motivo\s*=\s*"([^"]*)"/i.exec(comando[1])?.[1]?.trim() : undefined;
+  const comandos = bruto.match(COMANDOS_DE_ACAO) || [];
+  const texto = comando && !token
+    ? bruto
+        .replace(COMANDO_HUMANO, "")
+        .replace(COMANDOS_DE_ACAO, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+    : "";
+  return { texto, comandos, motivo: motivo || undefined };
+}
+
 async function callCompativelOpenAI(
   qual: "groq" | "openrouter",
   systemText: string,
@@ -617,9 +650,16 @@ export const generateBotReply = async (
         text = await chamarProvedor(provedor, systemText, turns);
       }
 
-      if (!text || text.includes(HANDOFF_TOKEN)) {
-        return { kind: "handoff", text: HANDOFF_MESSAGE };
+      const passagem = lerPassagemParaHumano(text);
+      if (passagem) {
+        const comandos = [...passagem.comandos, ...comandosPendentes].join("\n");
+        return {
+          kind: "handoff",
+          text: [passagem.texto || HANDOFF_MESSAGE, comandos].filter(Boolean).join("\n"),
+          motivo: passagem.motivo
+        };
       }
+      if (!text) return { kind: "handoff", text: HANDOFF_MESSAGE };
 
       if (comandosPendentes.length) text = `${text}\n${comandosPendentes.join("\n")}`;
       return { kind: "reply", text };

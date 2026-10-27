@@ -1694,10 +1694,11 @@ const responderRajadaComBot = async (
       }
     }
     if (depois) await SendWhatsAppMessage({ body: depois, ticket });
-    if (reply.kind === "handoff" && !reply.falha) await passarParaHumano(ticket.id, ticket.companyId);
-    // Falha de todos os provedores: avisa uma vez e pausa o bot nesta conversa,
-    // em vez de repetir "Só um momento…" a cada mensagem (decisão 26/10/2026).
-    if (reply.kind === "handoff" && reply.falha) await passarParaHumano(ticket.id, ticket.companyId);
+    // Falha de todos os provedores também: avisa uma vez e pausa o bot nesta
+    // conversa, em vez de repetir "Só um momento…" a cada mensagem (26/10/2026).
+    if (reply.kind === "handoff") {
+      await passarParaHumano(ticket.id, ticket.companyId, { motivo: reply.motivo, falha: reply.falha });
+    }
   } catch (err) {
     Sentry.captureException(err);
     logger.error({ err, ticketId }, "[aiBot] falha ao responder a rajada");

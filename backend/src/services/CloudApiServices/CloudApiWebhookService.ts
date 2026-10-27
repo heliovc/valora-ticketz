@@ -464,7 +464,9 @@ async function responderComBot(
     }
     if (depois) await enviarTexto(depois);
     // Falha também passa para humano: avisa uma vez, em vez de repetir a cada mensagem.
-    if (resposta.kind === "handoff") await passarParaHumano(ticket.id, companyId);
+    if (resposta.kind === "handoff") {
+      await passarParaHumano(ticket.id, companyId, { motivo: resposta.motivo, falha: resposta.falha });
+    }
   } catch (err: any) {
     // Bot que falha deixa a conversa para o humano — nunca derruba o webhook.
     Sentry.captureException(err);

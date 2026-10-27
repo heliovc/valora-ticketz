@@ -43,7 +43,11 @@ async function assertListaDaEmpresa(
 export interface Gatilho {
   tagId: number | null;
   whatsappId: number | null;
+  /** Gatilho que não é lista nem Entrada: "ia_humano". Nulo = os de sempre. */
+  evento?: string | null;
 }
+
+const NOME_IA_HUMANO = "A IA passou para uma pessoa";
 
 /** O quadro da Entrada tem de ser uma conexão da própria empresa. */
 async function assertGatilhoDaEmpresa(
@@ -61,7 +65,7 @@ async function assertGatilhoDaEmpresa(
 
 const ondeDoGatilho = (gatilho: Gatilho, companyId: number) =>
   gatilho.tagId === null
-    ? { companyId, tagId: null, whatsappId: gatilho.whatsappId }
+    ? { companyId, tagId: null, whatsappId: gatilho.whatsappId, evento: gatilho.evento ?? null }
     : { companyId, tagId: gatilho.tagId };
 
 export async function listarAcoes(
@@ -108,6 +112,10 @@ export async function listarTodasAsAcoes(companyId: number): Promise<
     // pertence a um quadro.
     plano.nomeDoGatilho = a.tagId
       ? nomePorId.get(a.tagId) ?? `lista ${a.tagId}`
+      : a.evento === "ia_humano"
+      ? a.whatsappId
+        ? `${NOME_IA_HUMANO} — ${conexaoPorId.get(a.whatsappId) ?? "quadro"}`
+        : NOME_IA_HUMANO
       : a.whatsappId
       ? `Conversa nova — ${conexaoPorId.get(a.whatsappId) ?? "quadro"}`
       : "Conversa nova";
@@ -140,6 +148,9 @@ function validar(dados: DadosDaAcao): void {
       throw new AppError("A instrução do bot passa de 2000 caracteres.", 400);
     }
   }
+  if (dados.tipo === "mover" && !(Number(dados.config?.tagId) > 0)) {
+    throw new AppError("Escolha a lista para onde o card vai.", 400);
+  }
   if (dados.tipo === "modelo") {
     const nome = String(dados.config?.templateName ?? "").trim();
     if (!nome) throw new AppError("Escolha o modelo que será enviado.", 400);
@@ -160,6 +171,12 @@ export async function criarAcao(
 ): Promise<FunnelAction> {
   await assertGatilhoDaEmpresa(gatilho, companyId);
   validar(dados);
+  if (dados.tipo === "mover") {
+    await assertListaDaEmpresa(Number(dados.config?.tagId), companyId);
+    if (Number(dados.config?.tagId) === gatilho.tagId) {
+      throw new AppError("O card já está nesta lista: escolha outra de destino.", 400);
+    }
+  }
 
   const onde = ondeDoGatilho(gatilho, companyId);
   const quantas = await FunnelAction.count({ where: onde as any });
@@ -171,6 +188,7 @@ export async function criarAcao(
     companyId,
     tagId: gatilho.tagId,
     whatsappId: gatilho.tagId === null ? gatilho.whatsappId : null,
+    evento: gatilho.tagId === null ? gatilho.evento ?? null : null,
     tipo: dados.tipo,
     config: dados.config ?? {},
     atrasoMinutos: dados.atrasoMinutos ?? 0,
@@ -191,11 +209,19 @@ export async function atualizarAcao(
     throw new AppError("ERR_NOT_FOUND", 404);
   }
   // Chave ausente = não mexe; trocar o tipo revalida a configuração inteira.
-  validar({ ...(acao.toJSON() as DadosDaAcao), ...dados });
+  const final = { ...(acao.toJSON() as DadosDaAcao), ...dados };
+  validar(final);
+  if (final.tipo === "mover") {
+    await assertListaDaEmpresa(Number(final.config?.tagId), companyId);
+    if (Number(final.config?.tagId) === acao.tagId) {
+      throw new AppError("O card já está nesta lista: escolha outra de destino.", 400);
+    }
+  }
   // Só os campos da ação: gatilho e empresa não mudam por aqui.
   const {
     tagId: _t,
     whatsappId: _w,
+    evento: _e,
     companyId: _c,
     id: _i,
     ...permitidos
@@ -228,17 +254,18 @@ export async function resumoDeAcoes(
 ): Promise<Record<string, number>> {
   const acoes = await FunnelAction.findAll({
     where: { companyId, ativo: true } as any,
-    attributes: ["tagId", "whatsappId"]
+    attributes: ["tagId", "whatsappId", "evento"]
   });
   const resumo: Record<string, number> = {};
   for (const a of acoes) {
     // Entrada do Funil principal = "entrada"; do quadro de uma conexão =
     // "entrada-<id>".
+    const base = a.evento === "ia_humano" ? "ia_humano" : "entrada";
     const chave =
       a.tagId === null || a.tagId === undefined
         ? a.whatsappId
-          ? `entrada-${a.whatsappId}`
-          : "entrada"
+          ? `${base}-${a.whatsappId}`
+          : base
         : String(a.tagId);
     resumo[chave] = (resumo[chave] ?? 0) + 1;
   }

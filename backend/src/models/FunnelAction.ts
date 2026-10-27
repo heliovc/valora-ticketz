@@ -65,6 +65,14 @@ class FunnelAction extends Model<FunnelAction> {
   @BelongsTo(() => Whatsapp)
   whatsapp: Whatsapp;
 
+  /**
+   * Gatilho que não é lista: nulo = lista (`tagId`) ou Entrada; "ia_humano" =
+   * "A IA passou para uma pessoa" (com `tagId` nulo e o quadro em `whatsappId`).
+   */
+  @AllowNull(true)
+  @Column(DataType.STRING)
+  evento: string | null;
+
   @ForeignKey(() => Company)
   @Column
   companyId: number;

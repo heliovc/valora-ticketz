@@ -303,7 +303,9 @@ export async function handleVisitorMessage(
         });
         out.push(toDTO(botMsg));
       }
-      if (reply?.kind === "handoff") await passarParaHumano(ticket.id, companyId);
+      if (reply?.kind === "handoff") {
+        await passarParaHumano(ticket.id, companyId, { motivo: reply.motivo, falha: reply.falha });
+      }
     } catch (err) {
       logger.error({ err }, "webchat: falha ao gerar resposta do bot");
     }

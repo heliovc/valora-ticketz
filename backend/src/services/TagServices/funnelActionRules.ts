@@ -25,7 +25,9 @@ export type TipoDeAcao =
    * Envia um modelo aprovado pelo WhatsApp Oficial — o único jeito de escrever
    * para quem nunca falou com a empresa (ex.: lead importado em lote).
    */
-  | "modelo";
+  | "modelo"
+  /** Leva o card para outra lista do quadro (`config.tagId`). */
+  | "mover";
 
 export interface AcaoDoFunil {
   id: number;
@@ -55,7 +57,8 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
   "bot_ligar",
   "bot_desligar",
   "email",
-  "modelo"
+  "modelo",
+  "mover"
 ];
 
 /**
@@ -66,7 +69,7 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
  * para tapar.
  */
 export function ehAcaoSilenciosa(tipo: string): boolean {
-  return tipo === "bot_ligar" || tipo === "bot_desligar";
+  return tipo === "bot_ligar" || tipo === "bot_desligar" || tipo === "mover";
 }
 
 /**
@@ -96,6 +99,9 @@ export function decidirAgendamento(
   }
   if (acao.tipo === "mensagem" && !String(acao.config?.mensagem ?? "").trim()) {
     return { agendar: false, motivo: "ação de mensagem sem texto" };
+  }
+  if (acao.tipo === "mover" && !Number(acao.config?.tagId)) {
+    return { agendar: false, motivo: "ação de mover sem lista de destino" };
   }
 
   if (ultimoDisparo) {

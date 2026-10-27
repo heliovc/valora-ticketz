@@ -258,6 +258,21 @@ async function mover(ticket: Ticket, nomeDaLista: string): Promise<string> {
   const listas = await listasDoQuadro(ticket);
   const destino = listas.find(l => normal(l.name) === normal(nomeDaLista));
   if (!destino) return `lista "${nomeDaLista}" não existe neste quadro`;
+  return trocarDeLista(ticket, destino, listas);
+}
+
+/**
+ * Leva o card para a lista `tagId` do quadro dele. É a ação "Mover para a
+ * lista" dos Gatilhos — a mesma troca que o MOVER da IA faz.
+ */
+export async function moverParaLista(ticket: Ticket, tagId: number): Promise<string> {
+  const listas = await listasDoQuadro(ticket);
+  const destino = listas.find(l => l.id === tagId);
+  if (!destino) return `a lista ${tagId} não é deste quadro`;
+  return trocarDeLista(ticket, destino, listas);
+}
+
+async function trocarDeLista(ticket: Ticket, destino: Tag, listas: Tag[]): Promise<string> {
   const marcas = await TicketTag.findAll({
     where: { ticketId: ticket.id, tagId: { [Op.in]: listas.map(l => l.id) } }
   });

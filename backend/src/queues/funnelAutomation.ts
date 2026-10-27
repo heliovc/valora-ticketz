@@ -1,4 +1,5 @@
 import Queue from "bull";
+import { Op } from "sequelize";
 import Company from "../models/Company";
 import Contact from "../models/Contact";
 import FunnelAction from "../models/FunnelAction";
@@ -73,6 +74,20 @@ async function dentroDoExpediente(companyId: number): Promise<boolean> {
   }
 }
 
+/**
+ * Trava contra ciclo de "Mover para a lista" (A move para B, B move para A):
+ * acima disto no último minuto, a automação para e registra o motivo.
+ */
+const MAX_MOVIMENTOS_POR_MINUTO = 3;
+
+async function movimentosRecentes(ticketId: number): Promise<number> {
+  const desde = new Date(Date.now() - 60 * 1000);
+  return TagAutomationRun.count({
+    where: { ticketId, createdAt: { [Op.gt]: desde } } as any,
+    include: [{ model: FunnelAction, as: "action", where: { tipo: "mover" }, required: true }]
+  });
+}
+
 /** Liga ou desliga o bot NESTA conversa. Estado interno: não fala com ninguém. */
 async function aplicarBot(ticketId: number, ligado: boolean): Promise<void> {
   await Ticket.update({ aiBotEnabled: ligado } as any, {
@@ -93,12 +108,15 @@ async function aplicarBot(ticketId: number, ligado: boolean): Promise<void> {
 export async function agendarAcoesDoFunil(
   ticketId: number,
   tagId: number | null,
-  companyId: number
+  companyId: number,
+  /** Gatilho que não é lista nem Entrada: hoje só "ia_humano". */
+  evento: string | null = null
 ): Promise<void> {
   try {
     // Conversa nova: só as automações do quadro da conversa. Conexão com
     // quadro próprio usa as dela; as demais usam as do Funil principal.
-    let onde: Record<string, unknown> = { companyId, tagId, ativo: true };
+    // `evento` separa a Entrada (nulo) do "A IA passou para uma pessoa".
+    let onde: Record<string, unknown> = { companyId, tagId, evento, ativo: true };
     if (tagId === null) {
       const ticket = await Ticket.findOne({
         where: { id: ticketId, companyId },
@@ -241,6 +259,28 @@ async function executar(
   }
 
   try {
+    if (acao.tipo === "mover") {
+      const destino = Number((acao.config as Record<string, unknown> | null)?.tagId) || 0;
+      const motivo = !destino
+        ? "ação de mover sem lista de destino"
+        : destino === acao.tagId
+        ? "a lista de destino é a própria lista do gatilho"
+        : (await movimentosRecentes(ticket.id)) >= MAX_MOVIMENTOS_POR_MINUTO
+        ? "possível ciclo: o card já foi movido por automação várias vezes no último minuto"
+        : null;
+      if (motivo) {
+        await run.update({ skippedReason: motivo } as any);
+        logger.warn(`[funnel] mover cancelado run=${runId}: ${motivo}`);
+        return;
+      }
+      // Import tardio: AcoesDoBot → TicketTagServices → esta fila.
+      const { moverParaLista } = await import("../services/AiBotServices/AcoesDoBot");
+      const resultado = await moverParaLista(ticket, destino);
+      await run.update({ sentAt: new Date() } as any);
+      logger.info(`[funnel] mover ticket=${ticket.id} acao=${acao.id}: ${resultado}`);
+      return;
+    }
+
     if (acao.tipo === "bot_ligar" || acao.tipo === "bot_desligar") {
       await aplicarBot(ticket.id, acao.tipo === "bot_ligar");
       await run.update({ sentAt: new Date() } as any);

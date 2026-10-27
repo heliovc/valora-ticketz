@@ -209,3 +209,15 @@ describe("o bot responde nesta conversa?", () => {
     expect(botDeveResponder(null, false)).toBe(false);
   });
 });
+
+describe("ação Mover para a lista (27/10/2026)", () => {
+  const base = { id: 1, companyId: 7, ativo: true, umaVezSo: true, atrasoMinutos: 0 };
+  it("é conhecida e roda na hora, sem esperar expediente", () => {
+    const d = decidirAgendamento({ ...base, tipo: "mover", config: { tagId: 12 } }, 7, null);
+    expect(d).toEqual({ agendar: true, imediato: true });
+  });
+  it("sem lista de destino não agenda", () => {
+    const d = decidirAgendamento({ ...base, tipo: "mover", config: {} }, 7, null);
+    expect(d).toEqual({ agendar: false, motivo: "ação de mover sem lista de destino" });
+  });
+});
