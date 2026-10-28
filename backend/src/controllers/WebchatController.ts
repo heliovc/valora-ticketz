@@ -68,3 +68,34 @@ export const messages = async (req: Request, res: Response): Promise<Response> =
   const result = await WebchatService.pollMessages(companyId, sessionId, after);
   return res.status(200).json(result);
 };
+
+// ───────────── Teste do bot (autenticado: a empresa vem do login) ─────────────
+
+// POST /webchat/teste/session
+export const testeSession = async (_req: Request, res: Response): Promise<Response> => {
+  return res.status(200).json({ sessionId: WebchatService.createSession() });
+};
+
+// POST /webchat/teste/message { sessionId, text }
+export const testeMessage = async (req: Request, res: Response): Promise<Response> => {
+  const { sessionId, text } = req.body || {};
+  if (!sessionId || !String(text || "").trim()) {
+    return res.status(400).json({ error: "invalid_request" });
+  }
+  const result = await WebchatService.handleVisitorMessage(
+    req.user.companyId,
+    String(sessionId),
+    String(text),
+    { teste: true }
+  );
+  return res.status(200).json(result);
+};
+
+// GET /webchat/teste/messages?sessionId=...&after=ISO
+export const testeMessages = async (req: Request, res: Response): Promise<Response> => {
+  const sessionId = String(req.query.sessionId || "");
+  if (!sessionId) return res.status(400).json({ error: "invalid_request" });
+  const after = req.query.after ? String(req.query.after) : undefined;
+  const result = await WebchatService.pollMessages(req.user.companyId, sessionId, after, { teste: true });
+  return res.status(200).json(result);
+};

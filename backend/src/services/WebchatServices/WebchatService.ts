@@ -128,9 +128,19 @@ async function ensureConnection(companyId: number): Promise<number> {
   return created.id;
 }
 
+/**
+ * Teste do bot (pedido do Hélio, 28/10/2026): o dono conversa com o próprio bot
+ * pelo painel antes de ligá-lo no WhatsApp. É o mesmo caminho do Chat do Site —
+ * card na Entrada, foco por lista, ações, agenda, proposta, passagem para humano —
+ * mas o contato é marcado "Teste do bot" e a conversa liga o bot só nela.
+ */
+export interface OpcoesDoChat {
+  teste?: boolean;
+}
+
 /** Número interno único do contato-visitante a partir do token de sessão. */
-function sessionNumber(sessionId: string): string {
-  return `webchat:${sessionId}`;
+function sessionNumber(sessionId: string, opts: OpcoesDoChat = {}): string {
+  return `${opts.teste ? "teste-do-bot" : "webchat"}:${sessionId}`;
 }
 
 /** Cria uma nova sessão (token opaco). Contato/ticket são criados na 1ª mensagem. */
@@ -138,11 +148,11 @@ export function createSession(): string {
   return randomUUID();
 }
 
-async function findOrCreateContactAndTicket(companyId: number, sessionId: string) {
-  const number = sessionNumber(sessionId);
+async function findOrCreateContactAndTicket(companyId: number, sessionId: string, opts: OpcoesDoChat = {}) {
+  const number = sessionNumber(sessionId, opts);
   const connectionId = await ensureConnection(companyId);
   const contact = await CreateOrUpdateContactService({
-    name: "Visitante do site",
+    name: opts.teste ? "Teste do bot" : "Visitante do site",
     number,
     isGroup: false,
     companyId,
@@ -188,12 +198,16 @@ function toDTO(m: Message): WebchatMessageDTO {
 export async function handleVisitorMessage(
   companyId: number,
   sessionId: string,
-  text: string
+  text: string,
+  opts: OpcoesDoChat = {}
 ): Promise<{ messages: WebchatMessageDTO[] }> {
   const body = (text || "").trim();
   if (!body) return { messages: [] };
 
-  const { contact, ticket } = await findOrCreateContactAndTicket(companyId, sessionId);
+  const { contact, ticket } = await findOrCreateContactAndTicket(companyId, sessionId, opts);
+  // Teste: o bot responde nesta conversa mesmo desligado na empresa (que é
+  // justamente o caso — ainda não foi ligado no WhatsApp). Botão do card vence.
+  if (opts.teste && ticket.aiBotEnabled == null) await ticket.update({ aiBotEnabled: true });
 
   // histórico ANTES de gravar a mensagem atual (para o bot)
   const history = await buildHistory(ticket.id);
@@ -214,7 +228,9 @@ export async function handleVisitorMessage(
   const out: WebchatMessageDTO[] = [toDTO(visitorMsg)];
 
   // Val Vendas: se o chat do site estiver na configuração, quem decide é a regra nova.
-  const decisaoDeVendas = await avaliarMensagemRecebida(ticket, contact, { messageId: visitorMsg.id });
+  const decisaoDeVendas = opts.teste
+    ? null
+    : await avaliarMensagemRecebida(ticket, contact, { messageId: visitorMsg.id });
   if (decisaoDeVendas) {
     if (decisaoDeVendas.reply) {
       try {
@@ -321,10 +337,11 @@ export async function handleVisitorMessage(
 export async function pollMessages(
   companyId: number,
   sessionId: string,
-  afterIso?: string
+  afterIso?: string,
+  opts: OpcoesDoChat = {}
 ): Promise<{ messages: WebchatMessageDTO[] }> {
   const contact = await Contact.findOne({
-    where: { companyId, number: sessionNumber(sessionId) }
+    where: { companyId, number: sessionNumber(sessionId, opts) }
   });
   if (!contact) return { messages: [] };
 
