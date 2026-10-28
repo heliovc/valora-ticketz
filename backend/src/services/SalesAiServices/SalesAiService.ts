@@ -421,6 +421,39 @@ export async function pausarPorHumano(ticketId: number): Promise<void> {
 
 const PARA_SEMPRE = new Date("2100-01-01T00:00:00Z");
 
+/** Ligar a Val Vendas numa conversa: tira a pausa e, se preciso, a marca como lead. */
+function mudancasParaLigar(ticket: Ticket): Record<string, unknown> {
+  const mudancas: Record<string, unknown> = { aiPausedUntil: null };
+  if (!ticket.salesSource) {
+    Object.assign(mudancas, { salesSource: ORIGEM_ELO, salesSourceVia: "manual", campaignRef: "MANUAL", attributedAt: new Date(), salesStage: "novo" });
+  } else if (ticket.salesStage === "transferido") {
+    mudancas.salesStage = "qualificado";
+  }
+  return mudancas;
+}
+
+/**
+ * Liga ou desliga a Val Vendas NESTA conversa, pelo funil ou pelo card. Ao
+ * contrário do #val, não depende de `valCommandsEnabled`: aquela chave é sobre
+ * comandos digitados no WhatsApp, não sobre o painel. Fora de um número da Val
+ * Vendas não faz nada e devolve false.
+ */
+export async function ligarValNaConversa(ticket: Ticket, ligado: boolean, porQuem: string): Promise<boolean> {
+  if (!(await escopoDeVendas(ticket))) return false;
+  await ticket.update((ligado ? mudancasParaLigar(ticket) : { aiPausedUntil: PARA_SEMPRE }) as any);
+  await AiDecisionLog.create({
+    companyId: ticket.companyId,
+    ticketId: ticket.id,
+    contactId: ticket.contactId,
+    whatsappId: ticket.whatsappId,
+    reply: false,
+    reason: ligado ? "val_ligada" : "val_desligada",
+    details: { porQuem }
+  } as any).catch(() => undefined);
+  logger.info(`[val-vendas] ticket ${ticket.id}: ${ligado ? "ligada" : "desligada"} (${porQuem})`);
+  return true;
+}
+
 export async function aplicarComandoVal(ticket: Ticket, comando: ComandoVal, porQuem: string): Promise<string> {
   const cfg = await escopoDeVendas(ticket);
   if (!cfg) return "Esta conversa não está numa conexão da Val Vendas.";
@@ -431,13 +464,7 @@ export async function aplicarComandoVal(ticket: Ticket, comando: ComandoVal, por
   } else if (comando.acao === "pausa") {
     await ticket.update({ aiPausedUntil: new Date(Date.now() + comando.minutos * 60 * 1000) } as any);
   } else {
-    const mudancas: Record<string, unknown> = { aiPausedUntil: null };
-    if (!ticket.salesSource) {
-      Object.assign(mudancas, { salesSource: ORIGEM_ELO, salesSourceVia: "manual", campaignRef: "MANUAL", attributedAt: new Date(), salesStage: "novo" });
-    } else if (ticket.salesStage === "transferido") {
-      mudancas.salesStage = "qualificado";
-    }
-    await ticket.update(mudancas as any);
+    await ticket.update(mudancasParaLigar(ticket) as any);
   }
   await AiDecisionLog.create({
     companyId: ticket.companyId,

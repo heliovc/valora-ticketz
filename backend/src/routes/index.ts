@@ -41,6 +41,7 @@ import ostraBotRoutes from "./ostraBotRoutes";
 import demoConversasRoutes from "./demoConversasRoutes";
 import siteLeadRoutes from "./siteLeadRoutes";
 import salesAiRoutes from "./salesAiRoutes";
+import botsRoutes from "./botsRoutes";
 
 const routes = Router();
 
@@ -52,6 +53,7 @@ routes.use(ostraBotRoutes);
 routes.use(demoConversasRoutes);
 routes.use(siteLeadRoutes);
 routes.use(salesAiRoutes);
+routes.use(botsRoutes);
 routes.use(aiBotProvidersRoutes);
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);

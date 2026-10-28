@@ -1,5 +1,7 @@
 import {
+  botDaAcao,
   botDeveResponder,
+  quemRespondeNoNumero,
   decidirAgendamento,
   decidirExecucao,
   ehAcaoSilenciosa,
@@ -219,5 +221,51 @@ describe("ação Mover para a lista (27/10/2026)", () => {
   it("sem lista de destino não agenda", () => {
     const d = decidirAgendamento({ ...base, tipo: "mover", config: {} }, 7, null);
     expect(d).toEqual({ agendar: false, motivo: "ação de mover sem lista de destino" });
+  });
+});
+
+describe("qual bot a ação controla", () => {
+  it("ação antiga, sem escolha, continua no bot de atendimento", () => {
+    expect(botDaAcao(undefined)).toBe("atendimento");
+    expect(botDaAcao({ instrucao: "foco em preço" })).toBe("atendimento");
+  });
+
+  it("ação marcada para a Val Vendas controla a Val Vendas", () => {
+    expect(botDaAcao({ bot: "val_vendas" })).toBe("val_vendas");
+  });
+
+  it("valor desconhecido não vira Val Vendas por engano", () => {
+    expect(botDaAcao({ bot: "outro" })).toBe("atendimento");
+  });
+});
+
+describe("quem responde em cada número", () => {
+  const estado = {
+    numerosDaValVendas: [5],
+    valVendasLigada: true,
+    atendimentoLigado: true,
+    atendimentoTemModelo: true
+  };
+
+  it("número da Val Vendas é dela, mesmo com o bot de atendimento ligado", () => {
+    expect(quemRespondeNoNumero(5, estado)).toEqual({ bot: "val_vendas", ligado: true });
+  });
+
+  it("Val Vendas desligada no número dela: o bot de atendimento não assume", () => {
+    expect(quemRespondeNoNumero(5, { ...estado, valVendasLigada: false })).toEqual({
+      bot: "val_vendas",
+      ligado: false
+    });
+  });
+
+  it("os demais números ficam com o bot de atendimento", () => {
+    expect(quemRespondeNoNumero(9, estado)).toEqual({ bot: "atendimento", ligado: true });
+  });
+
+  it("sem modelo configurado ninguém responde, mesmo com a chave ligada", () => {
+    expect(quemRespondeNoNumero(9, { ...estado, atendimentoTemModelo: false })).toEqual({
+      bot: "nenhum",
+      ligado: false
+    });
   });
 });
