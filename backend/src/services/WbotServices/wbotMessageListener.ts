@@ -1623,7 +1623,12 @@ const responderRajadaComBot = async (
   try {
     // Durante a espera um atendente pode ter assumido ou o bot ter sido
     // desligado pelo funil: vale o estado de agora, não o de quando chegou.
-    const ticket = await Ticket.findByPk(ticketId);
+    // Com o contato: o envio monta o destino por `ticket.contact.number`. Sem
+    // o include, toda resposta da IA no WhatsApp quebrava em getJidOf e o
+    // cliente ficava sem resposta (29/10/2026: Val e bot de atendimento).
+    const ticket = await Ticket.findByPk(ticketId, {
+      include: [{ model: Contact, as: "contact" }]
+    });
     if (!ticket) return;
     const vendas = await escopoDeVendas(ticket);
     if (vendas) {
