@@ -206,7 +206,7 @@ export async function handleVisitorMessage(
 
   const { contact, ticket } = await findOrCreateContactAndTicket(companyId, sessionId, opts);
   // Teste: o bot responde nesta conversa mesmo desligado na empresa (que é
-  // justamente o caso — ainda não foi ligado no WhatsApp). Botão do card vence.
+  // justamente o caso — ainda não foi ligado no WhatsApp). Desligar no card vale.
   if (opts.teste && ticket.aiBotEnabled == null) await ticket.update({ aiBotEnabled: true });
 
   // histórico ANTES de gravar a mensagem atual (para o bot)
@@ -268,7 +268,11 @@ export async function handleVisitorMessage(
   // silencia um canal e deixa o outro respondendo por cima do humano.
   const daEmpresa =
     (await GetCompanySetting(companyId, "aiBotEnabled", "disabled")) === "enabled";
-  const botEnabled = botDeveResponder(ticket.aiBotEnabled, daEmpresa);
+  // Teste do bot: a chave geral está desligada justamente porque o bot ainda não
+  // foi ligado no WhatsApp — aqui só vale o botão desta conversa.
+  const botEnabled = opts.teste
+    ? ticket.aiBotEnabled !== false
+    : botDeveResponder(ticket.aiBotEnabled, daEmpresa);
   const provedores = botEnabled ? await provedoresDaEmpresa(companyId) : [];
   if (botEnabled && provedores.length && !ticket.userId) {
     try {
