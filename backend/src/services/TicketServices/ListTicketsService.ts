@@ -157,7 +157,8 @@ const ListTicketsService = async ({
     {
       model: User,
       as: "user",
-      attributes: ["id", "name"]
+      // e-mail: o aviso de lead esperando (Smart) sabe se o card é de quem está logado.
+      attributes: ["id", "name", "email"]
     },
     {
       model: Tag,
