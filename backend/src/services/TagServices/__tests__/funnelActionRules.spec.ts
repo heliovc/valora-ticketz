@@ -5,6 +5,7 @@ import {
   decidirAgendamento,
   decidirExecucao,
   ehAcaoSilenciosa,
+  escolherResponsavel,
   JANELA_ANTI_DUPLICIDADE_SEGUNDOS
 } from "../funnelActionRules";
 
@@ -267,5 +268,54 @@ describe("quem responde em cada número", () => {
       bot: "nenhum",
       ligado: false
     });
+  });
+});
+
+describe("passagem para uma pessoa (V2 Elo Eventos)", () => {
+  it("rodízio passa para a próxima depois da última", () => {
+    expect(escolherResponsavel([5, 7, 9], "rodizio", 5)).toBe(7);
+    expect(escolherResponsavel([5, 7, 9], "rodizio", 9)).toBe(5);
+  });
+
+  it("rodízio começa pela primeira quando a última saiu da equipe", () => {
+    expect(escolherResponsavel([5, 7], "rodizio", 42)).toBe(5);
+    expect(escolherResponsavel([5, 7], "rodizio", null)).toBe(5);
+  });
+
+  it("fixo é sempre a primeira pessoa", () => {
+    expect(escolherResponsavel([7, 5], "fixo", 7)).toBe(7);
+  });
+
+  it("sem ninguém marcado não escolhe — quem chama cai no dono", () => {
+    expect(escolherResponsavel([], "rodizio", 3)).toBeNull();
+  });
+
+  it("atribuir não fala com o cliente: roda na hora, fora do expediente também", () => {
+    expect(ehAcaoSilenciosa("atribuir")).toBe(true);
+  });
+
+  const base = {
+    tipo: "email",
+    aindaNaLista: true,
+    exigeLista: false,
+    respeitaExpediente: false,
+    dentroDoExpediente: true,
+    postergacoes: 0,
+    maxPostergacoes: 3
+  };
+
+  it("reaviso some quando a equipe já atendeu", () => {
+    expect(decidirExecucao({ ...base, soSemAtendimento: true, equipeAtendeu: true })).toEqual({
+      acao: "descartar",
+      motivo: "a equipe já atendeu"
+    });
+  });
+
+  it("reaviso sai quando ninguém atendeu", () => {
+    expect(decidirExecucao({ ...base, soSemAtendimento: true, equipeAtendeu: false })).toEqual({ acao: "executar" });
+  });
+
+  it("sem a condição, o e-mail sai mesmo com a equipe atendendo", () => {
+    expect(decidirExecucao({ ...base, equipeAtendeu: true })).toEqual({ acao: "executar" });
   });
 });

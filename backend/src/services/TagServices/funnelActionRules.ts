@@ -27,7 +27,13 @@ export type TipoDeAcao =
    */
   | "modelo"
   /** Leva o card para outra lista do quadro (`config.tagId`). */
-  | "mover";
+  | "mover"
+  /**
+   * Escolhe quem da equipe atende o card (`config.userIds`, `config.modo`
+   * fixo|rodizio) e grava como responsável. Pedido do Hélio (29/10/2026): quando
+   * a IA passa a conversa, alguém tem nome e sobrenome para responder.
+   */
+  | "atribuir";
 
 export interface AcaoDoFunil {
   id: number;
@@ -58,7 +64,8 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
   "bot_desligar",
   "email",
   "modelo",
-  "mover"
+  "mover",
+  "atribuir"
 ];
 
 /**
@@ -69,7 +76,24 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
  * para tapar.
  */
 export function ehAcaoSilenciosa(tipo: string): boolean {
-  return tipo === "bot_ligar" || tipo === "bot_desligar" || tipo === "mover";
+  return tipo === "bot_ligar" || tipo === "bot_desligar" || tipo === "mover" || tipo === "atribuir";
+}
+
+/**
+ * Rodízio: entre as pessoas marcadas, a próxima depois da última que recebeu.
+ * Fixo (ou uma pessoa só): sempre a primeira. Lista vazia: ninguém — quem
+ * chama cai no dono da conta.
+ */
+export function escolherResponsavel(
+  userIds: number[],
+  modo: string | null | undefined,
+  ultimo: number | null | undefined
+): number | null {
+  const ids = userIds.map(Number).filter(n => Number.isFinite(n) && n > 0);
+  if (!ids.length) return null;
+  if (modo !== "rodizio" || ids.length === 1) return ids[0];
+  const i = ids.indexOf(Number(ultimo));
+  return ids[(i + 1) % ids.length];
 }
 
 /**
@@ -146,6 +170,10 @@ export function decidirExecucao(params: {
   soSemResposta?: boolean;
   /** O cliente mandou mensagem depois que a ação foi agendada. */
   clienteRespondeu?: boolean;
+  /** Reaviso: só sai se ninguém da equipe respondeu desde o agendamento. */
+  soSemAtendimento?: boolean;
+  /** Alguém da equipe escreveu na conversa (ou finalizou) depois do agendamento. */
+  equipeAtendeu?: boolean;
 }): DecisaoDeExecucao {
   // Mandar "obrigado pela compra" para quem voltou para "negociação" é pior do
   // que não mandar nada. Vale para qualquer tipo: ligar o bot de uma lista que
@@ -158,6 +186,11 @@ export function decidirExecucao(params: {
   // constrangedor. A conversa continuou — a cobrança de retorno não cabe mais.
   if (params.soSemResposta && params.clienteRespondeu) {
     return { acao: "descartar", motivo: "o cliente respondeu antes do follow-up" };
+  }
+
+  // Reaviso de lead esperando: alguém já respondeu, não há o que cobrar.
+  if (params.soSemAtendimento && params.equipeAtendeu) {
+    return { acao: "descartar", motivo: "a equipe já atendeu" };
   }
 
   // Ação silenciosa ignora expediente — ver `ehAcaoSilenciosa`.

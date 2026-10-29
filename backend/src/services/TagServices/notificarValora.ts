@@ -33,6 +33,14 @@ export interface AvisoDeAutomacao {
   gatilho: string;
   /** Texto livre que o usuário escreveu ao montar a automação. */
   observacao?: string | null;
+  /** "lead_aguardando": a IA passou a conversa e alguém precisa responder. */
+  modelo?: "lead_aguardando";
+  /** Por que a IA passou (nota da passagem). */
+  motivo?: string | null;
+  /** Há quanto tempo o lead espera quando este aviso sai (atraso da ação). */
+  esperandoMin?: number;
+  /** Quem está no card. */
+  responsavelNome?: string | null;
 }
 
 export async function notificarValoraPorEmail(

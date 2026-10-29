@@ -140,7 +140,8 @@ function validar(dados: DadosDaAcao): void {
     const para = String(dados.config?.para ?? "").trim();
     // Vazio é válido: significa "avise o dono da conta", e quem resolve isso é
     // a Valora, que sabe o e-mail do titular. Se veio algo, tem de ser e-mail.
-    if (para && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(para)) {
+    // "responsavel" (quem está no card) e "dono" são destinos nomeados.
+    if (para && para !== "responsavel" && para !== "dono" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(para)) {
       throw new AppError("ERR_FUNNEL_ACTION_INVALID_EMAIL", 400);
     }
   }
@@ -163,6 +164,15 @@ function validar(dados: DadosDaAcao): void {
     !["atendimento", "val_vendas"].includes(String(dados.config.bot))
   ) {
     throw new AppError("Escolha qual bot a automação controla.", 400);
+  }
+  if (dados.tipo === "atribuir") {
+    const ids = dados.config?.userIds;
+    if (ids !== undefined && (!Array.isArray(ids) || ids.some(i => !(Number(i) > 0)))) {
+      throw new AppError("Escolha as pessoas da equipe que recebem o card.", 400);
+    }
+    if (dados.config?.modo !== undefined && !["fixo", "rodizio"].includes(String(dados.config.modo))) {
+      throw new AppError("Escolha entre pessoa fixa e rodízio.", 400);
+    }
   }
   if (dados.tipo === "mover" && !(Number(dados.config?.tagId) > 0)) {
     throw new AppError("Escolha a lista para onde o card vai.", 400);

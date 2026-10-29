@@ -6,6 +6,8 @@ import FunnelAction from "../models/FunnelAction";
 import Tag from "../models/Tag";
 import TagAutomationRun from "../models/TagAutomationRun";
 import Ticket from "../models/Ticket";
+import Message from "../models/Message";
+import TicketNote from "../models/TicketNote";
 import TicketTag from "../models/TicketTag";
 import User from "../models/User";
 import Whatsapp from "../models/Whatsapp";
@@ -30,8 +32,47 @@ import {
   botDaAcao,
   decidirAgendamento,
   decidirExecucao,
+  escolherResponsavel,
   respeitaExpedienteSeConfigurado
 } from "../services/TagServices/funnelActionRules";
+import { websocketUpdateTicket } from "../services/TicketServices/UpdateTicketService";
+
+/**
+ * Alguém da equipe atendeu depois do agendamento? Mensagem nossa que não é da
+ * IA nem de automação (`sentBy` humano, ou vazio quando sai do celular), ou a
+ * conversa foi finalizada.
+ */
+async function equipeAtendeuDesde(ticket: Ticket, desde: Date): Promise<boolean> {
+  if (ticket.status === "closed") return true;
+  const humana = await Message.findOne({
+    where: {
+      ticketId: ticket.id,
+      fromMe: true,
+      createdAt: { [Op.gt]: desde },
+      [Op.or]: [{ sentBy: null }, { sentBy: "humano" }]
+    } as any,
+    attributes: ["id"]
+  });
+  return !!humana;
+}
+
+/** Dono da conta no CRM: o usuário cujo `externalId` é o tenant (user.id do dono na Valora). */
+async function donoDaEmpresa(companyId: number): Promise<User | null> {
+  const empresa = await Company.findByPk(companyId);
+  if (!empresa?.externalId) return null;
+  return User.findOne({ where: { companyId, externalId: empresa.externalId } });
+}
+
+/** Motivo que a IA deixou na nota ao passar a conversa (ver `passarParaHumano`). */
+async function motivoDaPassagem(ticketId: number): Promise<string | null> {
+  const nota = await TicketNote.findOne({
+    where: { ticketId, note: { [Op.like]: "%A IA passou a conversa%" } } as any,
+    order: [["createdAt", "DESC"]]
+  });
+  if (!nota) return null;
+  const m = nota.note.match(/:\s*(.+)$/s);
+  return (m ? m[1] : nota.note).trim().slice(0, 300) || null;
+}
 
 /**
  * Automação do funil: o card entra numa lista (ou chega conversa nova) e o CRM
@@ -245,6 +286,9 @@ async function executar(
   const soSemResposta = !!(acao.config as Record<string, unknown> | null)?.soSemResposta;
   const clienteRespondeu =
     !!ticket.lastInboundAt && !!run.createdAt && ticket.lastInboundAt > run.createdAt;
+  const soSemAtendimento = !!(acao.config as Record<string, unknown> | null)?.soSemAtendimento;
+  const equipeAtendeu =
+    soSemAtendimento && run.createdAt ? await equipeAtendeuDesde(ticket, run.createdAt) : false;
   const decisao = decidirExecucao({
     tipo: acao.tipo,
     aindaNaLista,
@@ -252,6 +296,8 @@ async function executar(
     respeitaExpediente,
     soSemResposta,
     clienteRespondeu,
+    soSemAtendimento,
+    equipeAtendeu,
     // Só consulta o expediente quando a regra pede — evita ida ao banco à toa.
     dentroDoExpediente:
       respeitaExpediente && respeitaExpedienteSeConfigurado(acao.tipo)
@@ -299,6 +345,30 @@ async function executar(
       return;
     }
 
+    if (acao.tipo === "atribuir") {
+      const config = (acao.config || {}) as Record<string, unknown>;
+      const ids = Array.isArray(config.userIds) ? (config.userIds as number[]) : [];
+      // Só pessoas que ainda existem nesta empresa (alguém pode ter saído da equipe).
+      const validos = ids.length
+        ? (await User.findAll({ where: { id: ids.map(Number), companyId: run.companyId }, attributes: ["id"] })).map(u => u.id)
+        : [];
+      const ordem = ids.map(Number).filter(id => validos.includes(id));
+      const escolhido =
+        escolherResponsavel(ordem, config.modo as string, config.ultimo as number) ??
+        (await donoDaEmpresa(run.companyId))?.id ??
+        null;
+      if (!escolhido) {
+        await run.update({ skippedReason: "ninguém da equipe para atribuir" } as any);
+        return;
+      }
+      await ticket.update({ userId: escolhido });
+      websocketUpdateTicket(ticket);
+      if (config.modo === "rodizio") await acao.update({ config: { ...config, ultimo: escolhido } } as any);
+      await run.update({ sentAt: new Date() } as any);
+      logger.info(`[funnel] atribuir ticket=${ticket.id} acao=${acao.id} user=${escolhido}`);
+      return;
+    }
+
     if (acao.tipo === "bot_ligar" || acao.tipo === "bot_desligar") {
       await aplicarBot(
         ticket,
@@ -311,9 +381,20 @@ async function executar(
 
     if (acao.tipo === "email") {
       // Quem envia é a Valora — ver `notificarValora.ts` para o porquê.
+      const iaHumano = String(acao.evento || "").startsWith("ia_humano");
       const lista = acao.tagId
         ? (await Tag.findByPk(acao.tagId))?.name ?? `lista ${acao.tagId}`
+        : iaHumano
+        ? "A IA passou para uma pessoa"
         : "conversa nova";
+      // Destino: "responsavel" = quem está no card; "dono" ou vazio = a Valora
+      // escolhe o dono da conta; qualquer outro texto é um e-mail digitado.
+      const destino = String(acao.config?.para || "").trim();
+      let para: string | null = destino && destino !== "responsavel" && destino !== "dono" ? destino : null;
+      if (destino === "responsavel") {
+        const atual = await Ticket.findByPk(ticket.id, { include: [{ model: User, as: "user" }] });
+        para = atual?.user?.email || null;
+      }
 
       // A Valora identifica o cliente pelo `externalId` da empresa, que é o
       // `user.id` do dono — não pelo id interno do CRM.
@@ -327,12 +408,21 @@ async function executar(
 
       const enviado = await notificarValoraPorEmail({
         tenantId: empresa.externalId,
-        para: (acao.config?.para as string) || null,
+        para,
         ticketId: ticket.id,
         contatoNome: ticket.contact?.name ?? "",
         contatoNumero: ticket.contact?.number ?? "",
         gatilho: lista,
-        observacao: (acao.config?.observacao as string) || null
+        observacao: (acao.config?.observacao as string) || null,
+        ...(iaHumano
+          ? {
+              modelo: "lead_aguardando",
+              motivo: await motivoDaPassagem(ticket.id),
+              esperandoMin: Math.max(0, acao.atrasoMinutos ?? 0),
+              responsavelNome:
+                (await Ticket.findByPk(ticket.id, { include: [{ model: User, as: "user" }] }))?.user?.name ?? null
+            }
+          : {})
       });
 
       await run.update(
