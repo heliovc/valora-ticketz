@@ -99,6 +99,7 @@ import GetTicketWbot from "../../helpers/GetTicketWbot";
 import saveMediaToFile from "../../helpers/saveMediaFile";
 import { _t } from "../TranslationServices/i18nService";
 import WhatsappLidMap from "../../models/WhatsappLidMap";
+import { origemDoEnvio } from "../../helpers/enviadasPeloSistema";
 
 export interface ImessageUpsert {
   messages: proto.IWebMessageInfo[];
@@ -2050,11 +2051,17 @@ const handleMessage = async (
         if (newMessage) await newMessage.update({ isDeleted: true });
         return;
       }
-      // Digitada no celular (o que o CRM envia não volta por aqui). Só conta
-      // mensagem recente: a sincronização de histórico também chega assim.
+      // Mensagem que o próprio CRM mandou (automação do funil): passa por aqui
+      // ao gravar e no eco do WhatsApp. Não é humano — não pausa a Val.
+      const doSistema = origemDoEnvio(msg.key.id);
+      if (doSistema) {
+        if (newMessage && !newMessage.sentBy) await newMessage.update({ sentBy: doSistema });
+      }
+      // Digitada no celular. Só conta mensagem recente: a sincronização de
+      // histórico também chega assim.
       const recente =
         Date.now() / 1000 - Number(msg.messageTimestamp || 0) < 180;
-      if (!isGroup && recente && newMessage && ticket.salesSource) {
+      if (!doSistema && !isGroup && recente && newMessage && ticket.salesSource) {
         await newMessage.update({ sentBy: "humano" });
         await pausarPorHumano(ticket.id);
       }

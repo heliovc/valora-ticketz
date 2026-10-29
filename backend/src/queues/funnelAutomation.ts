@@ -511,7 +511,8 @@ async function executar(
       number: ticket.contact.number,
       body: corpo,
       // Grava na conversa: o atendente precisa ver o que saiu sem ele digitar.
-      saveOnTicket: ticket.id
+      saveOnTicket: ticket.id,
+      sentBy: "automacao"
     });
     await run.update({ sentAt: new Date() } as any);
       await marcarCampanha(acao, ticket);

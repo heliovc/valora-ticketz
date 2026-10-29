@@ -181,7 +181,8 @@ async function processarDisparo(job: { data: DadosDoDisparo }): Promise<void> {
       number: ticket.contact.number,
       body: formatBody(tag.autoMessage, ticket),
       // Grava na conversa: o atendente precisa ver o que saiu sem ele digitar.
-      saveOnTicket: ticket.id
+      saveOnTicket: ticket.id,
+      sentBy: "automacao"
     });
     await run.update({ sentAt: new Date() });
     logger.info(

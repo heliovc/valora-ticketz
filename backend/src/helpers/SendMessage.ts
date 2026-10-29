@@ -10,6 +10,7 @@ import Message from "../models/Message";
 import CheckSettings from "./CheckSettings";
 import saveMediaToFile from "./saveMediaFile";
 import OutOfTicketMessage from "../models/OutOfTicketMessages";
+import { marcarEnvioDoSistema } from "./enviadasPeloSistema";
 
 export type MessageData = {
   number: string;
@@ -23,6 +24,8 @@ export type MessageData = {
   read?: boolean;
   quotedMsg?: Message;
   linkPreview?: any;
+  /** Quem do CRM enviou (`automacao`...): o eco não vira "humano digitou no celular". */
+  sentBy?: string;
 };
 
 export const SendMessage = async (
@@ -89,6 +92,10 @@ export const SendMessage = async (
             ? undefined
             : messageData.linkPreview || false
       });
+    }
+
+    if (messageData.sentBy) {
+      marcarEnvioDoSistema(message?.key?.id, messageData.sentBy);
     }
 
     if (messageData.saveOnTicket) {
