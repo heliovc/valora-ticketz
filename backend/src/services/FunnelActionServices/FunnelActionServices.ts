@@ -2,6 +2,7 @@ import AppError from "../../errors/AppError";
 import FunnelAction from "../../models/FunnelAction";
 import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
+import { SalesAiConfig } from "../../models/SalesAi";
 import { TIPOS_CONHECIDOS } from "../TagServices/funnelActionRules";
 
 /** Teto por lista. Automação é o que queima número de WhatsApp; 10 já é muito. */
@@ -123,6 +124,14 @@ export async function listarTodasAsAcoes(companyId: number): Promise<
   });
 }
 
+/** A Val Vendas só existe nas empresas que têm a configuração dela. */
+async function assertBotDaEmpresa(dados: DadosDaAcao, companyId: number): Promise<void> {
+  if (dados.config?.bot !== "val_vendas") return;
+  if (!(await SalesAiConfig.findOne({ where: { companyId } }))) {
+    throw new AppError("Esta conta não tem a Val Vendas.", 400);
+  }
+}
+
 function validar(dados: DadosDaAcao): void {
   if (!dados.tipo || !TIPOS_CONHECIDOS.includes(dados.tipo as any)) {
     throw new AppError("ERR_FUNNEL_ACTION_TYPE", 400);
@@ -148,6 +157,13 @@ function validar(dados: DadosDaAcao): void {
       throw new AppError("A instrução do bot passa de 2000 caracteres.", 400);
     }
   }
+  if (
+    (dados.tipo === "bot_ligar" || dados.tipo === "bot_desligar") &&
+    dados.config?.bot !== undefined &&
+    !["atendimento", "val_vendas"].includes(String(dados.config.bot))
+  ) {
+    throw new AppError("Escolha qual bot a automação controla.", 400);
+  }
   if (dados.tipo === "mover" && !(Number(dados.config?.tagId) > 0)) {
     throw new AppError("Escolha a lista para onde o card vai.", 400);
   }
@@ -171,6 +187,7 @@ export async function criarAcao(
 ): Promise<FunnelAction> {
   await assertGatilhoDaEmpresa(gatilho, companyId);
   validar(dados);
+  await assertBotDaEmpresa(dados, companyId);
   if (dados.tipo === "mover") {
     await assertListaDaEmpresa(Number(dados.config?.tagId), companyId);
     if (Number(dados.config?.tagId) === gatilho.tagId) {
@@ -211,6 +228,7 @@ export async function atualizarAcao(
   // Chave ausente = não mexe; trocar o tipo revalida a configuração inteira.
   const final = { ...(acao.toJSON() as DadosDaAcao), ...dados };
   validar(final);
+  await assertBotDaEmpresa(final, companyId);
   if (final.tipo === "mover") {
     await assertListaDaEmpresa(Number(final.config?.tagId), companyId);
     if (Number(final.config?.tagId) === acao.tagId) {

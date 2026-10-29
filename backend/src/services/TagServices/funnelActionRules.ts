@@ -195,3 +195,37 @@ export function botDeveResponder(
   if (!daEmpresa) return false;
   return daConversa !== false;
 }
+
+/** Qual bot uma ação "ligar/desligar o bot" controla. */
+export type BotDoFunil = "atendimento" | "val_vendas";
+
+/**
+ * Ações gravadas antes da escolha (28/10/2026) não têm `config.bot`: elas
+ * sempre mexeram no bot de atendimento, e continuam mexendo.
+ */
+export function botDaAcao(config: Record<string, unknown> | null | undefined): BotDoFunil {
+  return config?.bot === "val_vendas" ? "val_vendas" : "atendimento";
+}
+
+export type QuemResponde = "val_vendas" | "atendimento" | "nenhum";
+
+/**
+ * Quem responde num número. O número decide o bot: nos da Val Vendas o bot de
+ * atendimento nunca fala, e fora deles a Val Vendas nunca fala. Espelha
+ * `escopoDeVendas` + `botDeveResponder` para a tela "Bots" dizer a verdade.
+ */
+export function quemRespondeNoNumero(
+  whatsappId: number,
+  estado: {
+    numerosDaValVendas: number[];
+    valVendasLigada: boolean;
+    atendimentoLigado: boolean;
+    atendimentoTemModelo: boolean;
+  }
+): { bot: QuemResponde; ligado: boolean } {
+  if (estado.numerosDaValVendas.map(Number).includes(Number(whatsappId))) {
+    return { bot: "val_vendas", ligado: estado.valVendasLigada };
+  }
+  const ligado = estado.atendimentoLigado && estado.atendimentoTemModelo;
+  return { bot: ligado ? "atendimento" : "nenhum", ligado };
+}

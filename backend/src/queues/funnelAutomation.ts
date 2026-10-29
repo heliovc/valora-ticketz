@@ -20,9 +20,14 @@ import { parametrosDoContato } from "../services/CloudApiServices/CloudApiBroadc
 import formatBody from "../helpers/Mustache";
 import { checkOpenHours } from "../helpers/checkOpenHours";
 import { logger } from "../utils/logger";
-import { registrarEnvioDeCampanha } from "../services/SalesAiServices/SalesAiService";
+import {
+  ligarValNaConversa,
+  registrarEnvioDeCampanha
+} from "../services/SalesAiServices/SalesAiService";
 import { notificarValoraPorEmail } from "../services/TagServices/notificarValora";
 import {
+  BotDoFunil,
+  botDaAcao,
   decidirAgendamento,
   decidirExecucao,
   respeitaExpedienteSeConfigurado
@@ -89,12 +94,25 @@ async function movimentosRecentes(ticketId: number): Promise<number> {
 }
 
 /** Liga ou desliga o bot NESTA conversa. Estado interno: não fala com ninguém. */
-async function aplicarBot(ticketId: number, ligado: boolean): Promise<void> {
+async function aplicarBot(
+  ticket: Ticket,
+  ligado: boolean,
+  bot: BotDoFunil
+): Promise<void> {
+  if (bot === "val_vendas") {
+    const aplicou = await ligarValNaConversa(ticket, ligado, "funil");
+    if (!aplicou) {
+      logger.info(
+        `[funnel] Val Vendas não se aplica ticket=${ticket.id}: número fora da Val Vendas`
+      );
+    }
+    return;
+  }
   await Ticket.update({ aiBotEnabled: ligado } as any, {
-    where: { id: ticketId }
+    where: { id: ticket.id }
   });
   logger.info(
-    `[funnel] bot ${ligado ? "ligado" : "desligado"} ticket=${ticketId}`
+    `[funnel] bot ${ligado ? "ligado" : "desligado"} ticket=${ticket.id}`
   );
 }
 
@@ -282,7 +300,11 @@ async function executar(
     }
 
     if (acao.tipo === "bot_ligar" || acao.tipo === "bot_desligar") {
-      await aplicarBot(ticket.id, acao.tipo === "bot_ligar");
+      await aplicarBot(
+        ticket,
+        acao.tipo === "bot_ligar",
+        botDaAcao(acao.config as any)
+      );
       await run.update({ sentAt: new Date() } as any);
       return;
     }
@@ -426,11 +448,17 @@ export async function desligarBotAoSairDaLista(
   companyId: number
 ): Promise<void> {
   try {
-    const ligavaOBot = await FunnelAction.findOne({
+    const ligavamOBot = await FunnelAction.findAll({
       where: { companyId, tagId, tipo: "bot_ligar", ativo: true } as any
     });
-    if (!ligavaOBot) return;
-    await aplicarBot(ticketId, false);
+    if (!ligavamOBot.length) return;
+    const ticket = await Ticket.findOne({ where: { id: ticketId, companyId } });
+    if (!ticket) return;
+    const bots = new Set(ligavamOBot.map(a => botDaAcao(a.config as any)));
+    for (const bot of bots) {
+      // eslint-disable-next-line no-await-in-loop
+      await aplicarBot(ticket, false, bot);
+    }
   } catch (err: any) {
     logger.error(
       `[funnel] falha ao desligar bot ticket=${ticketId}: ${err?.message}`
