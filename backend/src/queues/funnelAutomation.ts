@@ -198,11 +198,18 @@ export async function agendarAcoesDoFunil(
 
     for (const acao of acoes) {
       // `umaVezSo` é por AÇÃO, não por lista: uma lista pode mandar a mensagem
-      // uma vez só e ligar o bot toda vez que o card voltar.
-      const ultimoDisparo = await TagAutomationRun.findOne({
-        where: { ticketId, actionId: acao.id } as any,
-        order: [["createdAt", "DESC"]]
-      });
+      // uma vez só e ligar o bot toda vez que o card voltar. Vale primeiro a
+      // execução que saiu ou ainda está na fila (sem motivo de descarte); uma
+      // falha mais recente não pode esconder um envio que já aconteceu.
+      const ultimoDisparo =
+        (await TagAutomationRun.findOne({
+          where: { ticketId, actionId: acao.id, skippedReason: null } as any,
+          order: [["createdAt", "DESC"]]
+        })) ??
+        (await TagAutomationRun.findOne({
+          where: { ticketId, actionId: acao.id } as any,
+          order: [["createdAt", "DESC"]]
+        }));
 
       const decisao = decidirAgendamento(acao as any, companyId, ultimoDisparo);
       if (decisao.agendar === false) {

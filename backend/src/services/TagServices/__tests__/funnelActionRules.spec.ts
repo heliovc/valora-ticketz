@@ -67,6 +67,25 @@ describe("agendar a ação", () => {
     expect(d.agendar).toBe(false);
   });
 
+  it("'só na primeira vez' tenta de novo se o envio anterior falhou ou foi descartado", () => {
+    const falhou = { createdAt: new Date("2026-09-01"), sentAt: null, skippedReason: "falha: Error: Connection Closed" };
+    expect(decidirAgendamento(acao(), 7, falhou, AGORA).agendar).toBe(true);
+    const descartado = { createdAt: new Date("2026-09-01"), sentAt: null, skippedReason: "o cliente já respondeu" };
+    expect(decidirAgendamento(acao(), 7, descartado, AGORA).agendar).toBe(true);
+  });
+
+  it("'só na primeira vez' não repete o que saiu nem o que ainda está na fila", () => {
+    const saiu = { createdAt: new Date("2026-09-01"), sentAt: new Date("2026-09-01"), skippedReason: null };
+    expect(decidirAgendamento(acao(), 7, saiu, AGORA).agendar).toBe(false);
+    const naFila = { createdAt: new Date("2026-09-01"), sentAt: null, skippedReason: null };
+    expect(decidirAgendamento(acao(), 7, naFila, AGORA).agendar).toBe(false);
+  });
+
+  it("falha há menos de um minuto não dispara de novo (dois cliques seguidos)", () => {
+    const faz30s = { createdAt: new Date(AGORA.getTime() - 30_000), skippedReason: "falha: x" };
+    expect(decidirAgendamento(acao(), 7, faz30s, AGORA).agendar).toBe(false);
+  });
+
   it("sem 'só na primeira vez', repete — mas não dois cliques seguidos", () => {
     const faz30s = new Date(AGORA.getTime() - 30_000);
     expect(

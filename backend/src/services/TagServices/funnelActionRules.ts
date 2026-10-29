@@ -48,6 +48,18 @@ export interface AcaoDoFunil {
 
 export interface UltimoDisparo {
   createdAt: Date | string;
+  sentAt?: Date | string | null;
+  skippedReason?: string | null;
+}
+
+/**
+ * A execução anterior não chegou a fazer nada: foi descartada ou falhou (ex.:
+ * "falha: Connection Closed" com o WhatsApp caído). Para "só na primeira vez"
+ * ela não conta — senão um envio que nunca saiu trava o card para sempre
+ * (4 cards da W1 da Valora, 29/10/2026).
+ */
+export function disparoNaoSaiu(d: UltimoDisparo): boolean {
+  return !d.sentAt && !!d.skippedReason;
 }
 
 export type DecisaoDeAgendamento =
@@ -129,7 +141,7 @@ export function decidirAgendamento(
   }
 
   if (ultimoDisparo) {
-    if (acao.umaVezSo !== false) {
+    if (acao.umaVezSo !== false && !disparoNaoSaiu(ultimoDisparo)) {
       return {
         agendar: false,
         motivo: "já executou e está marcado como só na primeira vez"
