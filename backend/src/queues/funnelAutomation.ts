@@ -30,6 +30,7 @@ import { notificarValoraPorEmail } from "../services/TagServices/notificarValora
 import {
   BotDoFunil,
   botDaAcao,
+  clienteRespondeuDesde,
   decidirAgendamento,
   decidirExecucao,
   escolherResponsavel,
@@ -291,8 +292,7 @@ async function executar(
 
   const respeitaExpediente = !!acao.soHorarioComercial;
   const soSemResposta = !!(acao.config as Record<string, unknown> | null)?.soSemResposta;
-  const clienteRespondeu =
-    !!ticket.lastInboundAt && !!run.createdAt && ticket.lastInboundAt > run.createdAt;
+  const clienteRespondeu = clienteRespondeuDesde(ticket, run.createdAt);
   const soSemAtendimento = !!(acao.config as Record<string, unknown> | null)?.soSemAtendimento;
   const equipeAtendeu =
     soSemAtendimento && run.createdAt ? await equipeAtendeuDesde(ticket, run.createdAt) : false;
@@ -461,7 +461,8 @@ async function executar(
         parametrosDoContato(
           Array.isArray(config.params) ? (config.params as string[]) : [],
           ticket.contact?.name || null
-        )
+        ),
+        "automacao"
       );
       await run.update({ sentAt: new Date() } as any);
       await marcarCampanha(acao, ticket);
@@ -479,13 +480,36 @@ async function executar(
     // número de outro quadro.
     if (!isBaileys(ticket.channel)) {
       if (isOficial(ticket.channel) && !dentroDaJanela(ticket)) {
-        await run.update({
-          skippedReason:
-            "fora da janela de 24h do WhatsApp Oficial: só sai modelo aprovado"
-        } as any);
+        // Follow-up de quem parou de responder cai quase sempre aqui: a janela
+        // conta da última mensagem do cliente. Com modelo reserva, sai ele.
+        const reserva = (acao.config as Record<string, unknown> | null)
+          ?.modeloForaDaJanela as Record<string, unknown> | undefined;
+        if (!reserva?.templateName) {
+          await run.update({
+            skippedReason:
+              "fora da janela de 24h do WhatsApp Oficial: só sai modelo aprovado"
+          } as any);
+          return;
+        }
+        await enviarModeloNaConversa(
+          run.companyId,
+          ticket.id,
+          String(reserva.templateName),
+          String(reserva.language || ""),
+          parametrosDoContato(
+            Array.isArray(reserva.params) ? (reserva.params as string[]) : [],
+            ticket.contact?.name || null
+          ),
+          "automacao"
+        );
+        await run.update({ sentAt: new Date() } as any);
+        await marcarCampanha(acao, ticket);
+        logger.info(
+          `[funnel] modelo reserva ${reserva.templateName} enviado ticket=${ticket.id} acao=${acao.id}`
+        );
         return;
       }
-      await SendChannelMessage({ body: corpo, ticket });
+      await SendChannelMessage({ body: corpo, ticket, sentBy: "automacao" });
       await run.update({ sentAt: new Date() } as any);
       await marcarCampanha(acao, ticket);
       logger.info(

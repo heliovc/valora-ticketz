@@ -6,7 +6,8 @@ import {
   decidirExecucao,
   ehAcaoSilenciosa,
   escolherResponsavel,
-  JANELA_ANTI_DUPLICIDADE_SEGUNDOS
+  JANELA_ANTI_DUPLICIDADE_SEGUNDOS,
+  clienteRespondeuDesde
 } from "../funnelActionRules";
 
 /**
@@ -336,5 +337,28 @@ describe("passagem para uma pessoa (V2 Elo Eventos)", () => {
 
   it("sem a condição, o e-mail sai mesmo com a equipe atendendo", () => {
     expect(decidirExecucao({ ...base, equipeAtendeu: true })).toEqual({ acao: "executar" });
+  });
+});
+
+describe("o cliente respondeu desde que o follow-up foi agendado? (29/10/2026)", () => {
+  const agendado = new Date("2026-10-29T12:00:00Z");
+  const depois = new Date("2026-10-29T12:05:00Z");
+  const antes = new Date("2026-10-29T11:00:00Z");
+
+  it("respondeu pelo WhatsApp comum (QR) — o caso que deixava o follow-up sair", () => {
+    expect(clienteRespondeuDesde({ lastClientMessageAt: depois, lastInboundAt: null }, agendado)).toBe(true);
+  });
+
+  it("respondeu pelo Oficial", () => {
+    expect(clienteRespondeuDesde({ lastClientMessageAt: null, lastInboundAt: depois }, agendado)).toBe(true);
+  });
+
+  it("última mensagem dele é anterior ao agendamento: não respondeu", () => {
+    expect(clienteRespondeuDesde({ lastClientMessageAt: antes, lastInboundAt: antes }, agendado)).toBe(false);
+    expect(clienteRespondeuDesde({}, agendado)).toBe(false);
+  });
+
+  it("sem data de agendamento não conclui nada", () => {
+    expect(clienteRespondeuDesde({ lastClientMessageAt: depois }, null)).toBe(false);
   });
 });

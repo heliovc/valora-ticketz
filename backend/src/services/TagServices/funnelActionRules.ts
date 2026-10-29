@@ -163,6 +163,27 @@ export function decidirAgendamento(
   return { agendar: true, imediato: ehAcaoSilenciosa(acao.tipo) && atraso === 0 };
 }
 
+/**
+ * O cliente escreveu depois de `desde`? Vale o mais recente entre a última
+ * mensagem dele em QUALQUER canal (`lastClientMessageAt`) e a do Oficial
+ * (`lastInboundAt`). Antes só olhava `lastInboundAt`, que o WhatsApp comum
+ * (QR) e o chat do site nunca gravam: o follow-up "fiquei sem retorno" saía
+ * para quem já tinha respondido (29/10/2026).
+ */
+export function clienteRespondeuDesde(
+  ticket: {
+    lastClientMessageAt?: Date | string | null;
+    lastInboundAt?: Date | string | null;
+  },
+  desde: Date | string | null | undefined
+): boolean {
+  if (!desde) return false;
+  const limite = new Date(desde).getTime();
+  return [ticket.lastClientMessageAt, ticket.lastInboundAt].some(
+    d => !!d && new Date(d).getTime() > limite
+  );
+}
+
 export type DecisaoDeExecucao =
   | { acao: "executar" }
   | { acao: "postergar" }

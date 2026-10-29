@@ -9,7 +9,8 @@ import { TIPOS_CONHECIDOS } from "../TagServices/funnelActionRules";
 const MAX_ACOES_POR_LISTA = 10;
 
 /** Atraso máximo: 7 dias. Acima disso o cliente já esqueceu do assunto. */
-const MAX_ATRASO_MINUTOS = 7 * 24 * 60;
+// 30 dias: a cadência de follow-up vai até o "mover para Sem resposta" no D+10.
+const MAX_ATRASO_MINUTOS = 30 * 24 * 60;
 
 interface DadosDaAcao {
   tipo?: string;
@@ -176,6 +177,19 @@ function validar(dados: DadosDaAcao): void {
   }
   if (dados.tipo === "mover" && !(Number(dados.config?.tagId) > 0)) {
     throw new AppError("Escolha a lista para onde o card vai.", 400);
+  }
+  // Reserva da mensagem no WhatsApp Oficial fora da janela de 24 h.
+  const reserva = dados.config?.modeloForaDaJanela as Record<string, unknown> | undefined;
+  if (reserva !== undefined && reserva !== null) {
+    if (dados.tipo !== "mensagem" || typeof reserva !== "object") {
+      throw new AppError("Modelo reserva só vale para a ação de mensagem.", 400);
+    }
+    if (!String(reserva.templateName ?? "").trim()) {
+      throw new AppError("Escolha o modelo reserva.", 400);
+    }
+    if (reserva.params && !Array.isArray(reserva.params)) {
+      throw new AppError("Variáveis do modelo inválidas.", 400);
+    }
   }
   if (dados.tipo === "modelo") {
     const nome = String(dados.config?.templateName ?? "").trim();

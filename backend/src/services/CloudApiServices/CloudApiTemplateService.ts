@@ -329,7 +329,9 @@ export async function enviarModeloNaConversa(
   ticketId: number,
   name: string,
   language: string,
-  paramsBrutos: string[]
+  paramsBrutos: string[],
+  /** Quem enviou (`automacao` no funil): não conta como atendimento da equipe. */
+  sentBy?: string
 ): Promise<void> {
   const ticket = await Ticket.findOne({ where: { id: ticketId, companyId } });
   if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
@@ -362,7 +364,8 @@ export async function enviarModeloNaConversa(
       fromMe: true,
       read: true,
       ack: 1,
-      channel: CHANNEL
+      channel: CHANNEL,
+      ...(sentBy ? { sentBy } : {})
     },
     companyId
   });
