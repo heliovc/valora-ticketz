@@ -382,6 +382,9 @@ async function executar(
     if (acao.tipo === "email") {
       // Quem envia é a Valora — ver `notificarValora.ts` para o porquê.
       const iaHumano = String(acao.evento || "").startsWith("ia_humano");
+      // Aviso de lead esperando: no gatilho da IA ou quando a ação pede o modelo
+      // (os passos do Elo Eventos moram na lista "Aguardando atendimento").
+      const leadAguardando = iaHumano || acao.config?.modelo === "lead_aguardando";
       const lista = acao.tagId
         ? (await Tag.findByPk(acao.tagId))?.name ?? `lista ${acao.tagId}`
         : iaHumano
@@ -414,7 +417,7 @@ async function executar(
         contatoNumero: ticket.contact?.number ?? "",
         gatilho: lista,
         observacao: (acao.config?.observacao as string) || null,
-        ...(iaHumano
+        ...(leadAguardando
           ? {
               modelo: "lead_aguardando",
               motivo: await motivoDaPassagem(ticket.id),
