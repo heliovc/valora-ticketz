@@ -1,4 +1,6 @@
 import { Op } from "sequelize";
+import { resultadoDaEtapaDeVendas } from "../../helpers/encerramento";
+import { encerrarPelaIa } from "../AiBotServices/EncerrarPelaIa";
 import Company from "../../models/Company";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
@@ -313,6 +315,7 @@ export async function aplicarResposta(
     return "";
   }
   const m = extrairMarcadoresDeVendas(texto);
+  const etapaAnterior = ticket.salesStage;
   const mudancas: Record<string, unknown> = {};
   if (m.etapa) mudancas.salesStage = m.etapa;
   if (m.resumo) mudancas.salesSummary = m.resumo.slice(0, 300);
@@ -327,6 +330,10 @@ export async function aplicarResposta(
   if (m.transferir || sinais.handoff) {
     await avisarTransferencia(ticket, contact, cfg, m.resumo || ticket.salesSummary || "A playbook pediu transferência.");
   }
+  // Sem interesse = perdido; demo ou teste aceitos = fechado. Dispara o gatilho
+  // do resultado em Automações (mover para "Perdido", desligar a Val...).
+  const fim = resultadoDaEtapaDeVendas(etapaAnterior, mudancas.salesStage as string | undefined);
+  if (fim) await encerrarPelaIa(ticket.id, ticket.companyId, fim, m.resumo || undefined);
   return m.texto;
 }
 

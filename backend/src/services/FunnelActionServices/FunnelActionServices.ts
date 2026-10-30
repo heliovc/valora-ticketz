@@ -1,4 +1,5 @@
 import AppError from "../../errors/AppError";
+import { NOME_DO_EVENTO } from "../../helpers/encerramento";
 import FunnelAction from "../../models/FunnelAction";
 import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
@@ -45,11 +46,10 @@ async function assertListaDaEmpresa(
 export interface Gatilho {
   tagId: number | null;
   whatsappId: number | null;
-  /** Gatilho que não é lista nem Entrada: "ia_humano". Nulo = os de sempre. */
+  /** Gatilho que não é lista nem Entrada: "ia_humano", "ia_fechado", "ia_perdido". Nulo = os de sempre. */
   evento?: string | null;
 }
 
-const NOME_IA_HUMANO = "A IA passou para uma pessoa";
 
 /** O quadro da Entrada tem de ser uma conexão da própria empresa. */
 async function assertGatilhoDaEmpresa(
@@ -114,10 +114,10 @@ export async function listarTodasAsAcoes(companyId: number): Promise<
     // pertence a um quadro.
     plano.nomeDoGatilho = a.tagId
       ? nomePorId.get(a.tagId) ?? `lista ${a.tagId}`
-      : a.evento === "ia_humano"
+      : a.evento && NOME_DO_EVENTO[a.evento]
       ? a.whatsappId
-        ? `${NOME_IA_HUMANO} — ${conexaoPorId.get(a.whatsappId) ?? "quadro"}`
-        : NOME_IA_HUMANO
+        ? `${NOME_DO_EVENTO[a.evento]} — ${conexaoPorId.get(a.whatsappId) ?? "quadro"}`
+        : NOME_DO_EVENTO[a.evento]
       : a.whatsappId
       ? `Conversa nova — ${conexaoPorId.get(a.whatsappId) ?? "quadro"}`
       : "Conversa nova";
@@ -302,7 +302,7 @@ export async function resumoDeAcoes(
   for (const a of acoes) {
     // Entrada do Funil principal = "entrada"; do quadro de uma conexão =
     // "entrada-<id>".
-    const base = a.evento === "ia_humano" ? "ia_humano" : "entrada";
+    const base = a.evento && NOME_DO_EVENTO[a.evento] ? a.evento : "entrada";
     const chave =
       a.tagId === null || a.tagId === undefined
         ? a.whatsappId

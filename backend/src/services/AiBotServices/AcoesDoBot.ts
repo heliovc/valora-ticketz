@@ -21,12 +21,16 @@ import {
   temQualificacao,
   validarValor
 } from "../../helpers/qualificacao";
+import { lerResultado } from "../../helpers/encerramento";
+import { encerrarPelaIa } from "./EncerrarPelaIa";
 
 /**
  * Ações que o bot pode executar, configuradas por CONTA:
  *
  *   [[MOVER lista="Fechamento"]]                    → card vai para a lista
  *   [[SALVAR campo="CNPJ" valor="12.345.678/0001-90"]] → dado salvo no contato
+ *   [[ENCERRAR resultado="perdido" motivo="já fechou com outro"]] → gatilho
+ *     "A IA fechou com o cliente" / "O cliente recusou (IA)" em Automações
  *
  * QUANDO agir é regra do usuário, escrita na Personalidade ("quando o lead
  * aceitar a proposta, mova para Fechamento"). O sistema só garante que a ação
@@ -157,7 +161,7 @@ export async function contextoDeAcoes(ticketId: number, companyId: number): Prom
     dadosSalvos(ticket.contactId)
   ]);
   const partes: string[] = [];
-  if (listas.length || campos.length) partes.push(
+  partes.push(
     "Você executa ações escrevendo COMANDOS em linhas separadas da sua resposta. O sistema executa e apaga o comando antes de enviar — o cliente nunca vê. O texto para o cliente vem fora dos comandos, nas outras linhas."
   );
   if (listas.length) {
@@ -169,6 +173,14 @@ export async function contextoDeAcoes(ticketId: number, companyId: number): Prom
       ].join("\n")
     );
   }
+  partes.push(
+    [
+      "ENCERRAR — quando a negociação terminar de verdade:",
+      '- o cliente aceitou a proposta ou confirmou que quer contratar: [[ENCERRAR resultado="fechado"]]',
+      '- o cliente disse claramente que não quer (sem interesse, fechou com outro, desistiu): [[ENCERRAR resultado="perdido" motivo="em poucas palavras"]]',
+      "Não use quando o cliente só demorou para responder, pediu tempo para pensar ou ainda tem dúvidas. Continue respondendo normalmente na mesma mensagem (agradeça, confirme o próximo passo)."
+    ].join("\n")
+  );
   const qualificando = temQualificacao(campos);
   if (campos.length) {
     const ctx = qualificando ? await contextoDeNota(companyId) : {};
@@ -235,7 +247,7 @@ export async function contextoDeAcoes(ticketId: number, companyId: number): Prom
 
 // ── Execução ───────────────────────────────────────────
 
-const MARCADOR = /\[\[\s*(MOVER|SALVAR)\b([^\]]*)\]\]/gi;
+const MARCADOR = /\[\[\s*(MOVER|SALVAR|ENCERRAR)\b([^\]]*)\]\]/gi;
 
 function atributos(bruto: string): Record<string, string> {
   const r: Record<string, string> = {};
@@ -359,7 +371,7 @@ export async function atualizarNotaDoLead(
 }
 
 /**
- * Executa os comandos MOVER/SALVAR da resposta e devolve o texto sem eles.
+ * Executa os comandos MOVER/SALVAR/ENCERRAR da resposta e devolve o texto sem eles.
  * `[[SIMULAR]]` fica no texto — é tratado depois, por quem envia a imagem.
  * Nunca lança: ação que falha vira log, a resposta segue para o cliente.
  */
@@ -374,8 +386,14 @@ export async function executarAcoesDoBot(
   for (const [, verbo, bruto] of achados) {
     try {
       const a = atributos(bruto);
+      const fim = verbo.toUpperCase() === "ENCERRAR" ? lerResultado(a.resultado) : null;
       const resultado = !ticket
         ? "conversa não encontrada"
+        : verbo.toUpperCase() === "ENCERRAR"
+        ? fim
+          ? // eslint-disable-next-line no-await-in-loop
+            await encerrarPelaIa(ticket.id, companyId, fim, a.motivo)
+          : `resultado "${a.resultado ?? ""}" desconhecido`
         : verbo.toUpperCase() === "MOVER"
         ? // eslint-disable-next-line no-await-in-loop
           await mover(ticket, a.lista || a.nome || "")

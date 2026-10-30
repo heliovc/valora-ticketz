@@ -22,9 +22,10 @@ function lerGatilho(bruto: string): Gatilho {
   }
   const quadro = /^entrada-(\d+)$/.exec(bruto);
   if (quadro) return { tagId: null, whatsappId: Number(quadro[1]), evento: null };
-  // "A IA passou para uma pessoa": `ia_humano` (Funil principal) ou `ia_humano-<id>`.
-  const ia = /^ia_humano(?:-(\d+))?$/.exec(bruto);
-  if (ia) return { tagId: null, whatsappId: ia[1] ? Number(ia[1]) : null, evento: "ia_humano" };
+  // Eventos da IA: `ia_humano` (passou para uma pessoa), `ia_fechado`,
+  // `ia_perdido` — no Funil principal ou `-<id>` no quadro de uma conexão.
+  const ia = /^(ia_humano|ia_fechado|ia_perdido)(?:-(\d+))?$/.exec(bruto);
+  if (ia) return { tagId: null, whatsappId: ia[2] ? Number(ia[2]) : null, evento: ia[1] };
   const n = Number(bruto);
   if (Number.isInteger(n) && n > 0) return { tagId: n, whatsappId: null, evento: null };
   throw new AppError("ERR_NOT_FOUND", 404);

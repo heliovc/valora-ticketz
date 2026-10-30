@@ -1,4 +1,5 @@
 import Queue from "bull";
+import { NOME_DO_EVENTO } from "../helpers/encerramento";
 import { Op } from "sequelize";
 import Company from "../models/Company";
 import Contact from "../models/Contact";
@@ -179,7 +180,7 @@ export async function agendarAcoesDoFunil(
   ticketId: number,
   tagId: number | null,
   companyId: number,
-  /** Gatilho que não é lista nem Entrada: hoje só "ia_humano". */
+  /** Gatilho que não é lista nem Entrada: "ia_humano", "ia_fechado", "ia_perdido". */
   evento: string | null = null
 ): Promise<void> {
   try {
@@ -416,8 +417,8 @@ async function executar(
       const leadAguardando = iaHumano || acao.config?.modelo === "lead_aguardando";
       const lista = acao.tagId
         ? (await Tag.findByPk(acao.tagId))?.name ?? `lista ${acao.tagId}`
-        : iaHumano
-        ? "A IA passou para uma pessoa"
+        : acao.evento && NOME_DO_EVENTO[acao.evento]
+        ? NOME_DO_EVENTO[acao.evento]
         : "conversa nova";
       // Destino: "responsavel" = quem está no card; "dono" ou vazio = a Valora
       // escolhe o dono da conta; qualquer outro texto é um e-mail digitado.
