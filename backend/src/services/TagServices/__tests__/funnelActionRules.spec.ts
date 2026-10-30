@@ -153,6 +153,17 @@ describe("executar a ação", () => {
     });
   });
 
+  it("follow-up da Entrada não cobra quem ainda não foi respondido", () => {
+    // O cliente escreveu e ninguém respondeu: quem deve resposta somos nós.
+    expect(
+      decidirExecucao({ ...base, exigeLista: false, soSemResposta: true, semNossaResposta: true })
+    ).toEqual({ acao: "descartar", motivo: "ninguém respondeu o cliente ainda" });
+    // Sem a caixa marcada, a ação segue o caminho normal.
+    expect(
+      decidirExecucao({ ...base, exigeLista: false, semNossaResposta: true })
+    ).toEqual({ acao: "executar" });
+  });
+
   it("follow-up de silêncio não sai para quem acabou de responder", () => {
     // "Ainda está aí?" depois de o cliente escrever é constrangedor.
     expect(

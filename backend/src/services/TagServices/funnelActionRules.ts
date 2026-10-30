@@ -203,6 +203,11 @@ export function decidirExecucao(params: {
   soSemResposta?: boolean;
   /** O cliente mandou mensagem depois que a ação foi agendada. */
   clienteRespondeu?: boolean;
+  /**
+   * Follow-up da Entrada: ninguém (equipe, IA ou automação) falou com o
+   * cliente ainda. Não há silêncio dele para cobrar — quem deve resposta somos nós.
+   */
+  semNossaResposta?: boolean;
   /** Reaviso: só sai se ninguém da equipe respondeu desde o agendamento. */
   soSemAtendimento?: boolean;
   /** Alguém da equipe escreveu na conversa (ou finalizou) depois do agendamento. */
@@ -219,6 +224,9 @@ export function decidirExecucao(params: {
   // constrangedor. A conversa continuou — a cobrança de retorno não cabe mais.
   if (params.soSemResposta && params.clienteRespondeu) {
     return { acao: "descartar", motivo: "o cliente respondeu antes do follow-up" };
+  }
+  if (params.soSemResposta && params.semNossaResposta) {
+    return { acao: "descartar", motivo: "ninguém respondeu o cliente ainda" };
   }
 
   // Reaviso de lead esperando: alguém já respondeu, não há o que cobrar.

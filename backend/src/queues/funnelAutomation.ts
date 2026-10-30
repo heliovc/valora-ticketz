@@ -57,6 +57,16 @@ async function equipeAtendeuDesde(ticket: Ticket, desde: Date): Promise<boolean>
   return !!humana;
 }
 
+/** Quando falamos com o cliente pela primeira vez depois de `desde` (qualquer origem). */
+async function primeiraMensagemNossaDesde(ticketId: number, desde: Date): Promise<Date | null> {
+  const m = await Message.findOne({
+    where: { ticketId, fromMe: true, createdAt: { [Op.gt]: desde } } as any,
+    attributes: ["createdAt"],
+    order: [["createdAt", "ASC"]]
+  });
+  return m?.createdAt ?? null;
+}
+
 /** Dono da conta no CRM: o usuário cujo `externalId` é o tenant (user.id do dono na Valora). */
 async function donoDaEmpresa(companyId: number): Promise<User | null> {
   const empresa = await Company.findByPk(companyId);
@@ -292,7 +302,18 @@ async function executar(
 
   const respeitaExpediente = !!acao.soHorarioComercial;
   const soSemResposta = !!(acao.config as Record<string, unknown> | null)?.soSemResposta;
-  const clienteRespondeu = clienteRespondeuDesde(ticket, run.createdAt);
+  // Na lista, o silêncio conta do agendamento. Na Entrada o agendamento é a
+  // própria mensagem do cliente (gravada logo depois): conta da nossa primeira
+  // resposta, senão todo follow-up da Entrada caía como "o cliente respondeu".
+  const nossaResposta =
+    soSemResposta && !exigeLista && run.createdAt
+      ? await primeiraMensagemNossaDesde(ticket.id, run.createdAt)
+      : null;
+  const clienteRespondeu = clienteRespondeuDesde(
+    ticket,
+    exigeLista ? run.createdAt : nossaResposta
+  );
+  const semNossaResposta = soSemResposta && !exigeLista && !nossaResposta;
   const soSemAtendimento = !!(acao.config as Record<string, unknown> | null)?.soSemAtendimento;
   const equipeAtendeu =
     soSemAtendimento && run.createdAt ? await equipeAtendeuDesde(ticket, run.createdAt) : false;
@@ -303,6 +324,7 @@ async function executar(
     respeitaExpediente,
     soSemResposta,
     clienteRespondeu,
+    semNossaResposta,
     soSemAtendimento,
     equipeAtendeu,
     // Só consulta o expediente quando a regra pede — evita ida ao banco à toa.
