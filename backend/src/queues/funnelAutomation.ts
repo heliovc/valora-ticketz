@@ -31,6 +31,7 @@ import { notificarValoraPorEmail } from "../services/TagServices/notificarValora
 import {
   BotDoFunil,
   botDaAcao,
+  produtoDoBot,
   clienteRespondeuDesde,
   decidirAgendamento,
   decidirExecucao,
@@ -152,11 +153,12 @@ async function aplicarBot(
   ligado: boolean,
   bot: BotDoFunil
 ): Promise<void> {
-  if (bot === "val_vendas") {
-    const aplicou = await ligarValNaConversa(ticket, ligado, "funil");
+  const produto = produtoDoBot(bot);
+  if (produto) {
+    const aplicou = await ligarValNaConversa(ticket, ligado, "funil", produto);
     if (!aplicou) {
       logger.info(
-        `[funnel] Val Vendas não se aplica ticket=${ticket.id}: número fora da Val Vendas`
+        `[funnel] ${bot} não se aplica ticket=${ticket.id}: número fora da Val Vendas`
       );
     }
     return;

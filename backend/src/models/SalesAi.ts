@@ -68,6 +68,11 @@ export class SalesAiConfig extends Model<SalesAiConfig> {
   @Column(DataType.TEXT)
   protocol: string | null;
 
+  /** Ajustes por produto: `{ valora_saude: { videoUrl, videoLegenda } }`. */
+  @Default({})
+  @Column(DataType.JSONB)
+  produtos: Record<string, unknown>;
+
   @CreatedAt
   createdAt: Date;
 
@@ -192,6 +197,11 @@ export class SalesPlaybookVersion extends Model<SalesPlaybookVersion> {
 
   @Column
   companyId: number;
+
+  /** Produto desta playbook. Cada produto tem a sua sequência de versões. */
+  @Default("elo_eventos")
+  @Column
+  produto: string;
 
   @Column
   version: number;

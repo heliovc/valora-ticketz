@@ -42,7 +42,8 @@ import {
   pausarPorHumano,
   promptDeVendas
 } from "../SalesAiServices/SalesAiService";
-import { DecisaoDaIa, lerComandoVal } from "../SalesAiServices/salesAiRules";
+import { DecisaoDaIa, extrairMarcadoresDeVendas, lerComandoVal } from "../SalesAiServices/salesAiRules";
+import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
@@ -1733,7 +1734,7 @@ const responderRajadaDeVendas = async (
   const { history, pendente } = separarTurnoAtual(recent.reverse());
   if (!pendente) return;
   const reply = await generateBotReply({
-    persona: await promptDeVendas(cfg),
+    persona: await promptDeVendas(cfg, ticket.salesSource),
     knowledge: "",
     history,
     userMessage: pendente,
@@ -1747,6 +1748,7 @@ const responderRajadaDeVendas = async (
     falha: !!reply.falha
   });
   if (texto) await SendWhatsAppMessage({ body: texto, ticket, sentBy: "ai" });
+  if (extrairMarcadoresDeVendas(reply.text).video) await enviarVideoDeVendas(ticket, cfg);
 };
 
 const handleMessage = async (

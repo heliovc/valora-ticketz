@@ -7,9 +7,11 @@ import {
   extrairMarcadoresDeVendas,
   lerComandoVal,
   normalizarTelefone,
+  produtoDaConversa,
   regrasCompletas,
   removerCodigo,
-  shouldAiReply
+  shouldAiReply,
+  videoDoProduto
 } from "../salesAiRules";
 
 describe("parser de código ELO-*", () => {
@@ -130,7 +132,7 @@ describe("horário e marcadores", () => {
   });
   it("tira ETAPA, RESUMO e TRANSFERIR do texto", () => {
     const r = extrairMarcadoresDeVendas("Perfeito, vou chamar o Hélio!\n[[ETAPA=demo_solicitada]]\n[[RESUMO=Ana, buffet em Niterói, quer demo]]");
-    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false });
+    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false, video: false });
     const demoETransferir = extrairMarcadoresDeVendas("Vou chamar o Helio. [[ETAPA=demo_solicitada]] [[TRANSFERIR]]");
     expect(demoETransferir.transferir).toBe(true);
     expect(demoETransferir.etapaPedida).toBe("demo_solicitada");
@@ -139,5 +141,76 @@ describe("horário e marcadores", () => {
     expect(t.etapa).toBe("transferido");
     expect(t.texto).toBe("Já te passo para o Hélio.");
     expect(extrairMarcadoresDeVendas("x [[ETAPA=inventada]]").etapa).toBeNull();
+  });
+});
+
+describe("mais de um produto no mesmo número", () => {
+  const entrada = (salesSource: string | null): EntradaDaDecisao => ({
+    chaveDoAmbiente: true,
+    chaveDoPainel: true,
+    regras: { ...REGRAS_PADRAO },
+    temPlaybook: true,
+    conversa: { salesSource, salesSourceVia: "manual", salesStage: "novo", aiPausedUntil: null, temAtendente: false },
+    contato: { isPersonal: false },
+    mensagem: { ehGrupo: false, ehTransmissaoOuStatus: false },
+    contadores: { iaNaConversa: 0, iaNoUltimoMinuto: 0, maxPorConversa: 40, maxPorMinuto: 6 },
+    dentroDoHorario: true,
+    agora: new Date()
+  });
+
+  it("responde conversa do Saúde e do Elo", () => {
+    expect(shouldAiReply(entrada("valora_saude")).reply).toBe(true);
+    expect(shouldAiReply(entrada("elo_eventos")).reply).toBe(true);
+  });
+
+  it("conversa sem origem ou de produto desconhecido continua sem resposta", () => {
+    expect(shouldAiReply(entrada(null))).toEqual({ reply: false, reason: "sem_origem_elo_eventos" });
+    expect(shouldAiReply(entrada("outro")).reply).toBe(false);
+  });
+
+  it("produto sem playbook não responde, mesmo com origem", () => {
+    expect(shouldAiReply({ ...entrada("valora_saude"), temPlaybook: false })).toEqual({
+      reply: false,
+      reason: "sem_playbook_ativa"
+    });
+  });
+
+  it("contato pessoal segue barrado no Saúde", () => {
+    expect(shouldAiReply({ ...entrada("valora_saude"), contato: { isPersonal: true } }).reason).toBe("contato_pessoal");
+  });
+
+  it("conversa sem origem usa o produto padrão", () => {
+    expect(produtoDaConversa(null)).toBe("elo_eventos");
+    expect(produtoDaConversa("valora_saude")).toBe("valora_saude");
+    expect(produtoDaConversa("outro")).toBe("elo_eventos");
+  });
+});
+
+describe("vídeo de demonstração", () => {
+  it("o marcador sai do texto e fica no resultado", () => {
+    const m = extrairMarcadoresDeVendas("Te explico por aqui. [[VIDEO]]\n[[RESUMO=clínica quer saber mais]]");
+    expect(m.video).toBe(true);
+    expect(m.texto).toBe("Te explico por aqui.");
+    expect(m.resumo).toBe("clínica quer saber mais");
+  });
+
+  it("sem marcador, sem vídeo", () => {
+    expect(extrairMarcadoresDeVendas("Oi! [[ETAPA=qualificado]]").video).toBe(false);
+  });
+
+  it("lê o vídeo do produto certo", () => {
+    const produtos = { valora_saude: { videoUrl: " https://site.com/v.mp4 ", videoLegenda: " Veja " } };
+    expect(videoDoProduto(produtos, "valora_saude")).toEqual({ url: "https://site.com/v.mp4", legenda: "Veja" });
+    expect(videoDoProduto(produtos, "elo_eventos")).toBeNull();
+  });
+
+  it("recusa endereço que não é https e configuração vazia", () => {
+    expect(videoDoProduto({ valora_saude: { videoUrl: "http://site.com/v.mp4" } }, "valora_saude")).toBeNull();
+    expect(videoDoProduto({ valora_saude: {} }, "valora_saude")).toBeNull();
+    expect(videoDoProduto(null, "valora_saude")).toBeNull();
+  });
+
+  it("legenda vazia vira nula", () => {
+    expect(videoDoProduto({ valora_saude: { videoUrl: "https://a.b/v.mp4", videoLegenda: "  " } }, "valora_saude")?.legenda).toBeNull();
   });
 });

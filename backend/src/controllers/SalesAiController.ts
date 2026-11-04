@@ -24,7 +24,11 @@ import {
 } from "../services/SalesAiServices/SalesAiService";
 import {
   ETAPAS_DE_VENDAS,
+  PRODUTO_PADRAO,
+  PRODUTOS_DE_VENDAS,
+  ProdutoDeVendas,
   REGRAS_PADRAO,
+  ehProdutoDeVendas,
   linkDoWhatsapp,
   lerComandoVal,
   normalizarTelefone,
@@ -53,8 +57,34 @@ const CAMPOS_EDITAVEIS: Array<keyof SalesAiConfig> = [
   "businessHours",
   "handoff",
   "prospecting",
-  "protocol"
+  "protocol",
+  "produtos"
 ];
+
+/** Produto pedido na tela. Vazio = o padrão, que é como a playbook sempre funcionou. */
+function produtoDoPedido(valor: unknown): ProdutoDeVendas {
+  if (valor === undefined || valor === null || valor === "") return PRODUTO_PADRAO;
+  if (!ehProdutoDeVendas(valor)) throw new AppError("Produto desconhecido.", 400);
+  return valor;
+}
+
+/** Só produto conhecido, URL https e legenda que cabe no WhatsApp. */
+function produtosValidos(bruto: unknown): Record<string, unknown> {
+  if (typeof bruto !== "object" || bruto === null || Array.isArray(bruto)) {
+    throw new AppError("Ajustes por produto: envie um objeto.", 400);
+  }
+  const saida: Record<string, unknown> = {};
+  for (const [produto, dados] of Object.entries(bruto as Record<string, unknown>)) {
+    if (!ehProdutoDeVendas(produto)) throw new AppError("Produto desconhecido.", 400);
+    const d = (dados ?? {}) as { videoUrl?: unknown; videoLegenda?: unknown };
+    const videoUrl = String(d.videoUrl ?? "").trim();
+    const videoLegenda = String(d.videoLegenda ?? "").trim();
+    if (videoUrl && !/^https:\/\/\S+$/i.test(videoUrl)) throw new AppError("O vídeo precisa de um endereço https.", 400);
+    if (videoLegenda.length > 1000) throw new AppError("A legenda do vídeo passou de 1000 caracteres.", 400);
+    saida[produto] = { videoUrl, videoLegenda };
+  }
+  return saida;
+}
 
 function inteiro(v: unknown, min: number, max: number, campo: string): number {
   const n = Number(v);
@@ -64,7 +94,7 @@ function inteiro(v: unknown, min: number, max: number, campo: string): number {
 
 async function serializarConfig(cfg: SalesAiConfig) {
   const json = cfg.toJSON() as any;
-  return { ...json, rules: regrasCompletas(json.rules), chaveDoAmbiente: chaveDoAmbiente(), regrasPadrao: REGRAS_PADRAO };
+  return { ...json, rules: regrasCompletas(json.rules), chaveDoAmbiente: chaveDoAmbiente(), regrasPadrao: REGRAS_PADRAO, produtosDisponiveis: PRODUTOS_DE_VENDAS };
 }
 
 export const showConfig = async (req: Request, res: Response): Promise<Response> => {
@@ -93,6 +123,7 @@ export const updateConfig = async (req: Request, res: Response): Promise<Respons
     mudancas.whatsappIds = ids;
   }
   if (mudancas.rules !== undefined) mudancas.rules = regrasCompletas(mudancas.rules as Record<string, unknown>);
+  if (mudancas.produtos !== undefined) mudancas.produtos = { ...(cfg.produtos || {}), ...produtosValidos(mudancas.produtos) };
   await cfg.update(mudancas as any);
   return res.json(await serializarConfig(cfg));
 };
@@ -315,7 +346,8 @@ export const listCampaignLists = async (req: Request, res: Response): Promise<Re
 // ── Playbook ────────────────────────────────────────────────────────────────
 
 export const listPlaybook = async (req: Request, res: Response): Promise<Response> => {
-  const versoes = await SalesPlaybookVersion.findAll({ where: { companyId: req.user.companyId }, order: [["version", "DESC"]], limit: 50 });
+  const produto = produtoDoPedido(req.query.produto);
+  const versoes = await SalesPlaybookVersion.findAll({ where: { companyId: req.user.companyId, produto }, order: [["version", "DESC"]], limit: 50 });
   return res.json(versoes);
 };
 
@@ -324,10 +356,12 @@ export const savePlaybook = async (req: Request, res: Response): Promise<Respons
   const content = String(req.body?.content || "");
   if (!content.trim()) throw new AppError("O texto da playbook está vazio.", 400);
   if (content.length > 60000) throw new AppError("A playbook passou de 60 mil caracteres.", 400);
-  const ultima = (await SalesPlaybookVersion.max("version", { where: { companyId } })) as number | null;
-  await SalesPlaybookVersion.update({ active: false } as any, { where: { companyId } });
+  const produto = produtoDoPedido(req.body?.produto);
+  const ultima = (await SalesPlaybookVersion.max("version", { where: { companyId, produto } })) as number | null;
+  await SalesPlaybookVersion.update({ active: false } as any, { where: { companyId, produto } });
   const nova = await SalesPlaybookVersion.create({
     companyId,
+    produto,
     version: (ultima || 0) + 1,
     content,
     note: req.body?.note ? String(req.body.note).slice(0, 240) : null,
@@ -341,7 +375,7 @@ export const activatePlaybook = async (req: Request, res: Response): Promise<Res
   const { companyId } = req.user;
   const v = await SalesPlaybookVersion.findOne({ where: { id: Number(req.params.id), companyId } });
   if (!v) throw new AppError("Versão não encontrada.", 404);
-  await SalesPlaybookVersion.update({ active: false } as any, { where: { companyId } });
+  await SalesPlaybookVersion.update({ active: false } as any, { where: { companyId, produto: v.produto } });
   await v.update({ active: true } as any);
   return res.json(v);
 };

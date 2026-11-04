@@ -1,5 +1,6 @@
 import {
   botDaAcao,
+  produtoDoBot,
   botDeveResponder,
   quemRespondeNoNumero,
   decidirAgendamento,
@@ -371,5 +372,20 @@ describe("o cliente respondeu desde que o follow-up foi agendado? (29/10/2026)",
 
   it("sem data de agendamento não conclui nada", () => {
     expect(clienteRespondeuDesde({ lastClientMessageAt: depois }, null)).toBe(false);
+  });
+});
+
+describe("bot da Val Saúde na automação", () => {
+  it("a ação diz qual bot controla", () => {
+    expect(botDaAcao({ bot: "val_saude" })).toBe("val_saude");
+    expect(botDaAcao({ bot: "val_vendas" })).toBe("val_vendas");
+    expect(botDaAcao({})).toBe("atendimento");
+    expect(botDaAcao({ bot: "outro" })).toBe("atendimento");
+  });
+
+  it("cada bot de vendas aponta o seu produto", () => {
+    expect(produtoDoBot("val_saude")).toBe("valora_saude");
+    expect(produtoDoBot("val_vendas")).toBe("elo_eventos");
+    expect(produtoDoBot("atendimento")).toBeNull();
   });
 });

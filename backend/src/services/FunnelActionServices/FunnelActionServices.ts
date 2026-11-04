@@ -127,7 +127,7 @@ export async function listarTodasAsAcoes(companyId: number): Promise<
 
 /** A Val Vendas só existe nas empresas que têm a configuração dela. */
 async function assertBotDaEmpresa(dados: DadosDaAcao, companyId: number): Promise<void> {
-  if (dados.config?.bot !== "val_vendas") return;
+  if (dados.config?.bot !== "val_vendas" && dados.config?.bot !== "val_saude") return;
   if (!(await SalesAiConfig.findOne({ where: { companyId } }))) {
     throw new AppError("Esta conta não tem a Val Vendas.", 400);
   }
@@ -162,7 +162,7 @@ function validar(dados: DadosDaAcao): void {
   if (
     (dados.tipo === "bot_ligar" || dados.tipo === "bot_desligar") &&
     dados.config?.bot !== undefined &&
-    !["atendimento", "val_vendas"].includes(String(dados.config.bot))
+    !["atendimento", "val_vendas", "val_saude"].includes(String(dados.config.bot))
   ) {
     throw new AppError("Escolha qual bot a automação controla.", 400);
   }

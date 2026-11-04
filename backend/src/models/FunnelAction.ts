@@ -91,7 +91,7 @@ class FunnelAction extends Model<FunnelAction> {
   /**
    * Parâmetros da ação. Hoje: `{ mensagem: string }` para `tipo="mensagem"`.
    * Nas ações de bot, `bot` diz qual delas controla ("atendimento", o padrão,
-   * ou "val_vendas") e `instrucao` dá foco ao bot de atendimento.
+   * "val_vendas" ou "val_saude") e `instrucao` dá foco ao bot de atendimento.
    */
   @Default({})
   @Column(DataType.JSONB)

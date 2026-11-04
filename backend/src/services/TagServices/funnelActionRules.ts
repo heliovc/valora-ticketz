@@ -271,14 +271,20 @@ export function botDeveResponder(
 }
 
 /** Qual bot uma ação "ligar/desligar o bot" controla. */
-export type BotDoFunil = "atendimento" | "val_vendas";
+export type BotDoFunil = "atendimento" | "val_vendas" | "val_saude";
 
 /**
  * Ações gravadas antes da escolha (28/10/2026) não têm `config.bot`: elas
  * sempre mexeram no bot de atendimento, e continuam mexendo.
  */
 export function botDaAcao(config: Record<string, unknown> | null | undefined): BotDoFunil {
-  return config?.bot === "val_vendas" ? "val_vendas" : "atendimento";
+  return config?.bot === "val_vendas" || config?.bot === "val_saude" ? config.bot : "atendimento";
+}
+
+/** Produto que o bot vende. Nulo = bot de atendimento, que não vende produto nenhum. */
+export function produtoDoBot(bot: BotDoFunil): "elo_eventos" | "valora_saude" | null {
+  if (bot === "val_vendas") return "elo_eventos";
+  return bot === "val_saude" ? "valora_saude" : null;
 }
 
 export type QuemResponde = "val_vendas" | "atendimento" | "nenhum";

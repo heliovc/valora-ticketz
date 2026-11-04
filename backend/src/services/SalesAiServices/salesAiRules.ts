@@ -19,6 +19,46 @@ export type EtapaDeVendas = (typeof ETAPAS_DE_VENDAS)[number];
 
 export type ViaDeOrigem = "codigo" | "formulario" | "lista" | "anuncio" | "manual";
 
+/**
+ * O que a IA comercial vende. Um número pode vender mais de um produto: quem diz
+ * qual vale numa conversa é `Tickets.salesSource`, e cada produto tem a própria
+ * playbook. Regras, pausa e limites são os mesmos para todos.
+ */
+export const PRODUTOS_DE_VENDAS = ["elo_eventos", "valora_saude"] as const;
+export type ProdutoDeVendas = (typeof PRODUTOS_DE_VENDAS)[number];
+
+export const PRODUTO_PADRAO: ProdutoDeVendas = "elo_eventos";
+
+export const NOME_DO_BOT_DE_VENDAS: Record<ProdutoDeVendas, string> = {
+  elo_eventos: "Val Vendas",
+  valora_saude: "Val Saúde"
+};
+
+export function ehProdutoDeVendas(valor: unknown): valor is ProdutoDeVendas {
+  return (PRODUTOS_DE_VENDAS as readonly unknown[]).includes(valor);
+}
+
+/** Conversa sem origem conhecida usa o produto padrão, como antes de existirem dois. */
+export function produtoDaConversa(salesSource: string | null | undefined): ProdutoDeVendas {
+  return ehProdutoDeVendas(salesSource) ? salesSource : PRODUTO_PADRAO;
+}
+
+export interface VideoDoProduto {
+  url: string;
+  legenda: string | null;
+}
+
+/** Vídeo de demonstração configurado no painel. Sem URL https, não há vídeo. */
+export function videoDoProduto(
+  produtos: Record<string, unknown> | null | undefined,
+  produto: ProdutoDeVendas
+): VideoDoProduto | null {
+  const dados = (produtos?.[produto] ?? null) as { videoUrl?: unknown; videoLegenda?: unknown } | null;
+  const url = String(dados?.videoUrl ?? "").trim();
+  if (!/^https:\/\/\S+$/i.test(url)) return null;
+  return { url, legenda: String(dados?.videoLegenda ?? "").trim() || null };
+}
+
 /** Condições de `shouldAiReply` que o painel liga e desliga. */
 export interface RegrasDeAtivacao {
   /** Só responde conversa com origem Elo Eventos. Desligar = responde qualquer conversa da conexão. */
@@ -214,7 +254,7 @@ export function shouldAiReply(e: EntradaDaDecisao): DecisaoDaIa {
   }
   if (r.bloquearPessoais && e.contato.isPersonal) return { reply: false, reason: "contato_pessoal" };
   if (r.exigirOrigem) {
-    if (e.conversa.salesSource !== "elo_eventos") return { reply: false, reason: "sem_origem_elo_eventos" };
+    if (!ehProdutoDeVendas(e.conversa.salesSource)) return { reply: false, reason: "sem_origem_elo_eventos" };
     const regraDaVia = VIA_PARA_REGRA[e.conversa.salesSourceVia || ""];
     if (regraDaVia && !r[regraDaVia]) return { reply: false, reason: `origem_desligada_${e.conversa.salesSourceVia}` };
   }
@@ -251,10 +291,13 @@ export function extrairMarcadoresDeVendas(texto: string): {
   etapaPedida: EtapaDeVendas | null;
   resumo: string | null;
   transferir: boolean;
+  /** A IA pediu o vídeo de demonstração do produto. */
+  video: boolean;
 } {
   let etapa: EtapaDeVendas | null = null;
   let resumo: string | null = null;
   let transferir = false;
+  let video = false;
   const limpo = String(texto || "")
     .replace(/\[\[\s*ETAPA\s*[=:]\s*([a-z_]+)\s*\]\]/gi, (_, v: string) => {
       const e = v.toLowerCase() as EtapaDeVendas;
@@ -269,12 +312,16 @@ export function extrairMarcadoresDeVendas(texto: string): {
       transferir = true;
       return "";
     })
+    .replace(/\[\[\s*VIDEO\s*\]\]/gi, () => {
+      video = true;
+      return "";
+    })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   const etapaPedida: EtapaDeVendas | null = etapa;
   if (etapa === "transferido") transferir = true;
   if (transferir) etapa = "transferido";
-  return { texto: limpo, etapa, etapaPedida, resumo, transferir };
+  return { texto: limpo, etapa, etapaPedida, resumo, transferir, video };
 }
 
 // ── Valores iniciais (seed, editáveis no painel) ────────────────────────────

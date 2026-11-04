@@ -237,7 +237,7 @@ export async function handleVisitorMessage(
         const cfg = await escopoDeVendas(ticket);
         const reply = cfg
           ? await generateBotReply({
-              persona: await promptDeVendas(cfg),
+              persona: await promptDeVendas(cfg, ticket.salesSource),
               knowledge: "",
               history,
               userMessage: body,

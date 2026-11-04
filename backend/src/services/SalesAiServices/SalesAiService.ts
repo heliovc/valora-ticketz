@@ -22,11 +22,14 @@ import {
   ComandoVal,
   DecisaoDaIa,
   HorarioDeFuncionamento,
+  NOME_DO_BOT_DE_VENDAS,
+  ProdutoDeVendas,
   ViaDeOrigem,
   codigoNasPrimeiras,
   dentroDoHorario,
   extrairMarcadoresDeVendas,
   normalizarTelefone,
+  produtoDaConversa,
   regrasCompletas,
   removerCodigo,
   shouldAiReply,
@@ -89,13 +92,13 @@ export async function escopoDeVendas(ticket: Pick<Ticket, "companyId" | "whatsap
   return ids.includes(Number(ticket.whatsappId)) ? cfg : null;
 }
 
-async function playbookAtiva(companyId: number): Promise<SalesPlaybookVersion | null> {
-  return SalesPlaybookVersion.findOne({ where: { companyId, active: true }, order: [["version", "DESC"]] });
+async function playbookAtiva(companyId: number, produto: ProdutoDeVendas): Promise<SalesPlaybookVersion | null> {
+  return SalesPlaybookVersion.findOne({ where: { companyId, produto, active: true }, order: [["version", "DESC"]] });
 }
 
-/** Persona da Val Vendas: a playbook ativa + o protocolo de marcadores. */
-export async function promptDeVendas(cfg: SalesAiConfig): Promise<string> {
-  const pb = await playbookAtiva(cfg.companyId);
+/** Persona da conversa: a playbook ativa do produto + o protocolo de marcadores. */
+export async function promptDeVendas(cfg: SalesAiConfig, salesSource: string | null | undefined): Promise<string> {
+  const pb = await playbookAtiva(cfg.companyId, produtoDaConversa(salesSource));
   return [pb?.content?.trim() || "", (cfg.protocol || "").trim()].filter(Boolean).join("\n\n");
 }
 
@@ -129,12 +132,12 @@ export async function atribuirOrigem(ticket: Ticket, contact: Contact, cfg: Sale
   }
 
   const anterior = await Ticket.findOne({
-    where: { companyId: ticket.companyId, contactId: contact.id, salesSource: ORIGEM_ELO, id: { [Op.ne]: ticket.id } },
+    where: { companyId: ticket.companyId, contactId: contact.id, salesSource: { [Op.ne]: null }, id: { [Op.ne]: ticket.id } },
     order: [["attributedAt", "DESC"]]
   });
   if (anterior) {
     await ticket.update({
-      salesSource: ORIGEM_ELO,
+      salesSource: anterior.salesSource,
       salesSourceVia: anterior.salesSourceVia,
       campaignRef: anterior.campaignRef,
       attributedAt: anterior.attributedAt,
@@ -220,7 +223,10 @@ export async function decidir(
   cfg: SalesAiConfig,
   ctx: ContextoDaMensagem = {}
 ): Promise<DecisaoDaIa> {
-  const [contagem, pb] = await Promise.all([contarIa(ticket.id, ticket.companyId), playbookAtiva(ticket.companyId)]);
+  const [contagem, pb] = await Promise.all([
+    contarIa(ticket.id, ticket.companyId),
+    playbookAtiva(ticket.companyId, produtoDaConversa(ticket.salesSource))
+  ]);
   return shouldAiReply({
     chaveDoAmbiente: chaveDoAmbiente(),
     chaveDoPainel: !!cfg.enabled,
@@ -356,7 +362,7 @@ export async function avisarTransferencia(ticket: Ticket, contact: Contact, cfg:
         ticketId: ticket.id,
         contatoNome: contact.name || "",
         contatoNumero: contact.number || "",
-        gatilho: "Val Vendas: lead transferido para você",
+        gatilho: `${NOME_DO_BOT_DE_VENDAS[produtoDaConversa(ticket.salesSource)]}: lead transferido para você`,
         observacao
       } as any);
     }
@@ -428,11 +434,15 @@ export async function pausarPorHumano(ticketId: number): Promise<void> {
 
 const PARA_SEMPRE = new Date("2100-01-01T00:00:00Z");
 
-/** Ligar a Val Vendas numa conversa: tira a pausa e, se preciso, a marca como lead. */
-function mudancasParaLigar(ticket: Ticket): Record<string, unknown> {
+/**
+ * Ligar a IA numa conversa: tira a pausa e, se preciso, marca como lead do
+ * produto. Trocar de produto recomeça a etapa e o resumo: o que foi dito sobre
+ * um produto não vale para o outro.
+ */
+function mudancasParaLigar(ticket: Ticket, produto: ProdutoDeVendas): Record<string, unknown> {
   const mudancas: Record<string, unknown> = { aiPausedUntil: null };
-  if (!ticket.salesSource) {
-    Object.assign(mudancas, { salesSource: ORIGEM_ELO, salesSourceVia: "manual", campaignRef: "MANUAL", attributedAt: new Date(), salesStage: "novo" });
+  if (ticket.salesSource !== produto) {
+    Object.assign(mudancas, { salesSource: produto, salesSourceVia: "manual", campaignRef: "MANUAL", attributedAt: new Date(), salesStage: "novo", salesSummary: null });
   } else if (ticket.salesStage === "transferido") {
     mudancas.salesStage = "qualificado";
   }
@@ -444,10 +454,19 @@ function mudancasParaLigar(ticket: Ticket): Record<string, unknown> {
  * contrário do #val, não depende de `valCommandsEnabled`: aquela chave é sobre
  * comandos digitados no WhatsApp, não sobre o painel. Fora de um número da Val
  * Vendas não faz nada e devolve false.
+ *
+ * `produto`: a automação do funil diz qual bot liga. Sem ele (botão do card)
+ * vale o produto que a conversa já tem.
  */
-export async function ligarValNaConversa(ticket: Ticket, ligado: boolean, porQuem: string): Promise<boolean> {
+export async function ligarValNaConversa(
+  ticket: Ticket,
+  ligado: boolean,
+  porQuem: string,
+  produto?: ProdutoDeVendas
+): Promise<boolean> {
   if (!(await escopoDeVendas(ticket))) return false;
-  await ticket.update((ligado ? mudancasParaLigar(ticket) : { aiPausedUntil: PARA_SEMPRE }) as any);
+  const qual = produto ?? produtoDaConversa(ticket.salesSource);
+  await ticket.update((ligado ? mudancasParaLigar(ticket, qual) : { aiPausedUntil: PARA_SEMPRE }) as any);
   await AiDecisionLog.create({
     companyId: ticket.companyId,
     ticketId: ticket.id,
@@ -455,7 +474,7 @@ export async function ligarValNaConversa(ticket: Ticket, ligado: boolean, porQue
     whatsappId: ticket.whatsappId,
     reply: false,
     reason: ligado ? "val_ligada" : "val_desligada",
-    details: { porQuem }
+    details: { porQuem, produto: qual }
   } as any).catch(() => undefined);
   logger.info(`[val-vendas] ticket ${ticket.id}: ${ligado ? "ligada" : "desligada"} (${porQuem})`);
   return true;
@@ -471,7 +490,7 @@ export async function aplicarComandoVal(ticket: Ticket, comando: ComandoVal, por
   } else if (comando.acao === "pausa") {
     await ticket.update({ aiPausedUntil: new Date(Date.now() + comando.minutos * 60 * 1000) } as any);
   } else {
-    await ticket.update(mudancasParaLigar(ticket) as any);
+    await ticket.update(mudancasParaLigar(ticket, produtoDaConversa(ticket.salesSource)) as any);
   }
   await AiDecisionLog.create({
     companyId: ticket.companyId,
