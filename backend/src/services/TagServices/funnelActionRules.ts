@@ -62,6 +62,56 @@ export function disparoNaoSaiu(d: UltimoDisparo): boolean {
   return !d.sentAt && !!d.skippedReason;
 }
 
+/** Etiqueta que o card recebe quando uma automação não conseguiu fazer o que devia. */
+export const ETIQUETA_DE_FALHA = "Automação falhou";
+
+/**
+ * Separa falha de descarte esperado. "O cliente respondeu antes do follow-up" é
+ * a automação funcionando; "sem conexão de WhatsApp" é ela quebrada.
+ */
+export const PREFIXO_DE_FALHA = "falha: ";
+
+export function textoDaFalha(motivo: string): string {
+  return motivo.startsWith(PREFIXO_DE_FALHA) ? motivo : `${PREFIXO_DE_FALHA}${motivo}`;
+}
+
+/** O erro técnico vira frase de quem usa o funil. */
+export function motivoDoEnvioPerdido(erro: string | null): string {
+  if (erro?.includes("ERR_WAPP_CONTACT_NOT_FOUND")) {
+    return "o número não tem WhatsApp (telefone fixo, por exemplo)";
+  }
+  return erro
+    ? `a mensagem não entrou na conversa (${erro})`
+    : "o WhatsApp não confirmou o envio da mensagem";
+}
+
+export type ConfirmacaoDeEnvio = { confirmado: boolean; erro: string | null };
+
+/**
+ * Espera a mensagem aparecer na conversa ou o erro de gravação chegar.
+ *
+ * `sendMessage` não falha para número sem WhatsApp: quem prova o envio é a
+ * mensagem gravada. A espera não atrasa a fila, que já solta um disparo a cada
+ * 5 segundos.
+ */
+export async function aguardarConfirmacao(
+  consultar: () => Promise<ConfirmacaoDeEnvio>,
+  tentativas = 30,
+  dormir: () => Promise<void> = () =>
+    new Promise(resolve => {
+      setTimeout(resolve, 500);
+    })
+): Promise<ConfirmacaoDeEnvio> {
+  for (let i = 0; i < tentativas; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const estado = await consultar();
+    if (estado.confirmado || estado.erro) return estado;
+    // eslint-disable-next-line no-await-in-loop
+    await dormir();
+  }
+  return { confirmado: false, erro: null };
+}
+
 export type DecisaoDeAgendamento =
   | { agendar: true; imediato: boolean }
   | { agendar: false; motivo: string };

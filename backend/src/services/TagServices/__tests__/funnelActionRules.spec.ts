@@ -1,6 +1,9 @@
 import {
+  aguardarConfirmacao,
   botDaAcao,
+  motivoDoEnvioPerdido,
   produtoDoBot,
+  textoDaFalha,
   botDeveResponder,
   quemRespondeNoNumero,
   decidirAgendamento,
@@ -387,5 +390,58 @@ describe("bot da Val Saúde na automação", () => {
     expect(produtoDoBot("val_saude")).toBe("valora_saude");
     expect(produtoDoBot("val_vendas")).toBe("elo_eventos");
     expect(produtoDoBot("atendimento")).toBeNull();
+  });
+});
+
+describe("envio que não saiu de verdade", () => {
+  const semEspera = async () => undefined;
+
+  it("confirma assim que a mensagem aparece na conversa", async () => {
+    let consultas = 0;
+    const r = await aguardarConfirmacao(
+      async () => {
+        consultas += 1;
+        return { confirmado: consultas === 3, erro: null };
+      },
+      30,
+      semEspera
+    );
+    expect(r.confirmado).toBe(true);
+    expect(consultas).toBe(3);
+  });
+
+  it("para na hora quando a gravação avisa o erro, sem gastar as tentativas", async () => {
+    let consultas = 0;
+    const r = await aguardarConfirmacao(
+      async () => {
+        consultas += 1;
+        return { confirmado: false, erro: "ERR_WAPP_CONTACT_NOT_FOUND" };
+      },
+      30,
+      semEspera
+    );
+    expect(r).toEqual({ confirmado: false, erro: "ERR_WAPP_CONTACT_NOT_FOUND" });
+    expect(consultas).toBe(1);
+  });
+
+  it("desiste depois das tentativas e não confirma", async () => {
+    const r = await aguardarConfirmacao(
+      async () => ({ confirmado: false, erro: null }),
+      3,
+      semEspera
+    );
+    expect(r).toEqual({ confirmado: false, erro: null });
+  });
+
+  it("explica número sem WhatsApp em português, não com o código do erro", () => {
+    expect(motivoDoEnvioPerdido("Error: ERR_WAPP_CONTACT_NOT_FOUND")).toBe(
+      "o número não tem WhatsApp (telefone fixo, por exemplo)"
+    );
+    expect(motivoDoEnvioPerdido(null)).toBe("o WhatsApp não confirmou o envio da mensagem");
+  });
+
+  it("não repete o prefixo de falha", () => {
+    expect(textoDaFalha("sem conexão")).toBe("falha: sem conexão");
+    expect(textoDaFalha("falha: sem conexão")).toBe("falha: sem conexão");
   });
 });

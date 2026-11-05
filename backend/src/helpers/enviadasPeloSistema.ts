@@ -40,3 +40,35 @@ export function origemDoEnvio(
   }
   return m.origem;
 }
+
+const errosDeGravacao = new Map<string, { erro: string; ate: number }>();
+
+/**
+ * O envio do CRM saiu, mas a mensagem não pôde ser gravada na conversa.
+ *
+ * É o que acontece com número sem WhatsApp: o `sendMessage` volta sem erro e só
+ * a gravação descobre (`ERR_WAPP_CONTACT_NOT_FOUND`). Sem esta marca a automação
+ * registrava "enviado" para uma mensagem que ninguém recebeu (W1, 05/11/2026).
+ * Só guarda envio do próprio CRM, então o mapa não cresce com mensagem recebida.
+ */
+export function marcarErroDeGravacao(
+  messageId: string | null | undefined,
+  erro: string,
+  agora: number = Date.now()
+): void {
+  if (!messageId || !origemDoEnvio(messageId, agora)) return;
+  for (const [id, m] of errosDeGravacao) {
+    if (m.ate <= agora) errosDeGravacao.delete(id);
+  }
+  errosDeGravacao.set(messageId, { erro, ate: agora + VALIDADE_MS });
+}
+
+export function erroDeGravacao(
+  messageId: string | null | undefined,
+  agora: number = Date.now()
+): string | null {
+  if (!messageId) return null;
+  const m = errosDeGravacao.get(messageId);
+  if (!m || m.ate <= agora) return null;
+  return m.erro;
+}

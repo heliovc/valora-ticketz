@@ -28,10 +28,15 @@ import {
   registrarEnvioDeCampanha
 } from "../services/SalesAiServices/SalesAiService";
 import { notificarValoraPorEmail } from "../services/TagServices/notificarValora";
+import { avisarFalhaDaAutomacao } from "../services/TagServices/avisarFalhaDaAutomacao";
+import { erroDeGravacao } from "../helpers/enviadasPeloSistema";
 import {
   BotDoFunil,
+  aguardarConfirmacao,
   botDaAcao,
+  motivoDoEnvioPerdido,
   produtoDoBot,
+  textoDaFalha,
   clienteRespondeuDesde,
   decidirAgendamento,
   decidirExecucao,
@@ -153,7 +158,7 @@ async function aplicarBot(
   ligado: boolean,
   bot: BotDoFunil,
   lista?: string
-): Promise<void> {
+): Promise<boolean> {
   const produto = produtoDoBot(bot);
   if (produto) {
     const aplicou = await ligarValNaConversa(ticket, ligado, "funil", produto, lista);
@@ -162,7 +167,7 @@ async function aplicarBot(
         `[funnel] ${bot} não se aplica ticket=${ticket.id}: número fora da Val Vendas`
       );
     }
-    return;
+    return !!aplicou;
   }
   await Ticket.update({ aiBotEnabled: ligado } as any, {
     where: { id: ticket.id }
@@ -170,6 +175,23 @@ async function aplicarBot(
   logger.info(
     `[funnel] bot ${ligado ? "ligado" : "desligado"} ticket=${ticket.id}`
   );
+  return true;
+}
+
+/**
+ * A automação não conseguiu agir: grava o motivo e deixa isso visível no card.
+ * Descarte esperado (cliente respondeu, card saiu da lista) não passa por aqui.
+ */
+async function registrarFalha(
+  run: TagAutomationRun,
+  acao: FunnelAction,
+  ticket: Ticket,
+  motivo: string
+): Promise<void> {
+  await run.update({ skippedReason: textoDaFalha(motivo) } as any);
+  logger.error(`[funnel] falha run=${run.id} ticket=${ticket.id} acao=${acao.id}: ${motivo}`);
+  const lista = acao.tagId ? (await Tag.findByPk(acao.tagId))?.name ?? null : null;
+  await avisarFalhaDaAutomacao(ticket, lista, motivo);
 }
 
 /**
@@ -366,8 +388,7 @@ async function executar(
         ? "possível ciclo: o card já foi movido por automação várias vezes no último minuto"
         : null;
       if (motivo) {
-        await run.update({ skippedReason: motivo } as any);
-        logger.warn(`[funnel] mover cancelado run=${runId}: ${motivo}`);
+        await registrarFalha(run, acao, ticket, motivo);
         return;
       }
       // Import tardio: AcoesDoBot → TicketTagServices → esta fila.
@@ -391,7 +412,7 @@ async function executar(
         (await donoDaEmpresa(run.companyId))?.id ??
         null;
       if (!escolhido) {
-        await run.update({ skippedReason: "ninguém da equipe para atribuir" } as any);
+        await registrarFalha(run, acao, ticket, "ninguém da equipe para atribuir");
         return;
       }
       await ticket.update({ userId: escolhido });
@@ -406,12 +427,16 @@ async function executar(
       const lista = acao.tagId
         ? (await Tag.findByPk(acao.tagId))?.name
         : undefined;
-      await aplicarBot(
+      const aplicou = await aplicarBot(
         ticket,
         acao.tipo === "bot_ligar",
         botDaAcao(acao.config as any),
         lista
       );
+      if (!aplicou && acao.tipo === "bot_ligar") {
+        await registrarFalha(run, acao, ticket, "a Val não atende o número deste card");
+        return;
+      }
       await run.update({ sentAt: new Date() } as any);
       return;
     }
@@ -440,9 +465,7 @@ async function executar(
       // `user.id` do dono — não pelo id interno do CRM.
       const empresa = await Company.findByPk(run.companyId);
       if (!empresa?.externalId) {
-        await run.update({
-          skippedReason: "empresa sem vínculo com a Valora"
-        } as any);
+        await registrarFalha(run, acao, ticket, "empresa sem vínculo com a Valora");
         return;
       }
 
@@ -465,11 +488,11 @@ async function executar(
           : {})
       });
 
-      await run.update(
-        enviado
-          ? ({ sentAt: new Date() } as any)
-          : ({ skippedReason: "Valora não conseguiu enviar o e-mail" } as any)
-      );
+      if (!enviado) {
+        await registrarFalha(run, acao, ticket, "a Valora não conseguiu enviar o e-mail");
+        return;
+      }
+      await run.update({ sentAt: new Date() } as any);
       return;
     }
 
@@ -477,9 +500,7 @@ async function executar(
       // Modelo aprovado pelo WhatsApp Oficial: não depende da janela de 24h —
       // é o caminho para o primeiro contato com um lead importado.
       if (!isOficial(ticket.channel)) {
-        await run.update({
-          skippedReason: "modelo só existe em conversa do WhatsApp Oficial"
-        } as any);
+        await registrarFalha(run, acao, ticket, "modelo só existe em conversa do WhatsApp Oficial");
         return;
       }
       const config = (acao.config || {}) as Record<string, unknown>;
@@ -515,10 +536,12 @@ async function executar(
         const reserva = (acao.config as Record<string, unknown> | null)
           ?.modeloForaDaJanela as Record<string, unknown> | undefined;
         if (!reserva?.templateName) {
-          await run.update({
-            skippedReason:
-              "fora da janela de 24h do WhatsApp Oficial: só sai modelo aprovado"
-          } as any);
+          await registrarFalha(
+            run,
+            acao,
+            ticket,
+            "fora da janela de 24h do WhatsApp Oficial: só sai modelo aprovado"
+          );
           return;
         }
         await enviarModeloNaConversa(
@@ -555,27 +578,37 @@ async function executar(
           })
         : null) || (await GetDefaultWhatsApp(run.companyId));
     if (!whatsapp) {
-      await run.update({
-        skippedReason: "sem conexão de WhatsApp disponível"
-      } as any);
+      await registrarFalha(run, acao, ticket, "sem conexão de WhatsApp disponível");
       return;
     }
 
-    await SendMessage(whatsapp, {
+    const enviada = await SendMessage(whatsapp, {
       number: ticket.contact.number,
       body: corpo,
       // Grava na conversa: o atendente precisa ver o que saiu sem ele digitar.
       saveOnTicket: ticket.id,
       sentBy: "automacao"
     });
+    // `SendMessage` volta sem erro mesmo quando o número não existe no WhatsApp.
+    const idDaMensagem = enviada?.key?.id as string | undefined;
+    const confirmacao = await aguardarConfirmacao(async () => ({
+      confirmado: !!(
+        idDaMensagem &&
+        (await Message.findOne({ where: { id: idDaMensagem }, attributes: ["id"] }))
+      ),
+      erro: erroDeGravacao(idDaMensagem)
+    }));
+    if (!confirmacao.confirmado) {
+      await registrarFalha(run, acao, ticket, motivoDoEnvioPerdido(confirmacao.erro));
+      return;
+    }
     await run.update({ sentAt: new Date() } as any);
-      await marcarCampanha(acao, ticket);
+    await marcarCampanha(acao, ticket);
     logger.info(
       `[funnel] enviado ticket=${ticket.id} acao=${acao.id} contato=${ticket.contact.name}`
     );
   } catch (err: any) {
-    await run.update({ skippedReason: `falha: ${err?.message}` } as any);
-    logger.error(`[funnel] falha run=${runId}: ${err?.message}`);
+    await registrarFalha(run, acao, ticket, String(err?.message || "erro desconhecido"));
   }
 }
 

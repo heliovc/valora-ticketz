@@ -100,7 +100,10 @@ import GetTicketWbot from "../../helpers/GetTicketWbot";
 import saveMediaToFile from "../../helpers/saveMediaFile";
 import { _t } from "../TranslationServices/i18nService";
 import WhatsappLidMap from "../../models/WhatsappLidMap";
-import { origemDoEnvio } from "../../helpers/enviadasPeloSistema";
+import {
+  marcarErroDeGravacao,
+  origemDoEnvio
+} from "../../helpers/enviadasPeloSistema";
 
 export interface ImessageUpsert {
   messages: proto.IWebMessageInfo[];
@@ -2243,6 +2246,7 @@ const handleMessage = async (
     console.log(err);
     Sentry.captureException(err);
     logger.error(`Error handling whatsapp message: Err: ${err}`);
+    marcarErroDeGravacao(msg?.key?.id, String((err as Error)?.message || err));
   }
 };
 

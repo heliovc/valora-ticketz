@@ -9,6 +9,7 @@ import {
   apagarAcao,
   resumoDeAcoes
 } from "../services/FunnelActionServices/FunnelActionServices";
+import { falhasAbertas } from "../services/TagServices/avisarFalhaDaAutomacao";
 
 /**
  * O gatilho vem na rota: `entrada` = conversa nova do Funil principal,
@@ -66,4 +67,9 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
 export const resumo = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;
   return res.json(await resumoDeAcoes(companyId));
+};
+
+export const falhas = async (req: Request, res: Response): Promise<Response> => {
+  const { companyId } = req.user;
+  return res.json(await falhasAbertas(companyId));
 };

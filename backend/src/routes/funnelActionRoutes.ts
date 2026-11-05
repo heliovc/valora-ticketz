@@ -25,6 +25,12 @@ funnelActionRoutes.get(
   FunnelActionController.resumo
 );
 funnelActionRoutes.get(
+  // Antes da rota com `:tagId`, pelo mesmo motivo do "resumo".
+  "/funnel-actions/falhas",
+  isAuth,
+  FunnelActionController.falhas
+);
+funnelActionRoutes.get(
   "/funnel-actions/:tagId",
   isAuth,
   FunnelActionController.index

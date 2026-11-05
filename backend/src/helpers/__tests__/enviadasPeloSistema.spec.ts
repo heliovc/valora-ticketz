@@ -1,4 +1,9 @@
-import { marcarEnvioDoSistema, origemDoEnvio } from "../enviadasPeloSistema";
+import {
+  erroDeGravacao,
+  marcarEnvioDoSistema,
+  marcarErroDeGravacao,
+  origemDoEnvio
+} from "../enviadasPeloSistema";
 
 describe("mensagens que o próprio CRM enviou", () => {
   const T0 = 1_800_000_000_000;
@@ -22,5 +27,26 @@ describe("mensagens que o próprio CRM enviou", () => {
   it("envio sem id não marca nada", () => {
     marcarEnvioDoSistema(undefined, "automacao", T0);
     expect(origemDoEnvio(undefined, T0)).toBeNull();
+  });
+});
+
+describe("envio do CRM que não entrou na conversa", () => {
+  const T0 = 1_800_000_000_000;
+
+  it("guarda o erro do envio da automação para o worker ler", () => {
+    marcarEnvioDoSistema("ENVIO-FIXO", "automacao", T0);
+    marcarErroDeGravacao("ENVIO-FIXO", "ERR_WAPP_CONTACT_NOT_FOUND", T0 + 50);
+    expect(erroDeGravacao("ENVIO-FIXO", T0 + 100)).toBe("ERR_WAPP_CONTACT_NOT_FOUND");
+  });
+
+  it("ignora erro de mensagem recebida: o mapa não cresce com o que chega do cliente", () => {
+    marcarErroDeGravacao("RECEBIDA-DO-CLIENTE", "qualquer erro", T0);
+    expect(erroDeGravacao("RECEBIDA-DO-CLIENTE", T0 + 1)).toBeNull();
+  });
+
+  it("o erro vence junto com a marca do envio", () => {
+    marcarEnvioDoSistema("ENVIO-VELHO", "automacao", T0);
+    marcarErroDeGravacao("ENVIO-VELHO", "erro", T0 + 1);
+    expect(erroDeGravacao("ENVIO-VELHO", T0 + 11 * 60 * 1000)).toBeNull();
   });
 });
