@@ -24,6 +24,7 @@ import {
 } from "../services/SalesAiServices/SalesAiService";
 import {
   ETAPAS_DE_VENDAS,
+  NOME_DO_BOT_DE_VENDAS,
   PRODUTO_PADRAO,
   PRODUTOS_DE_VENDAS,
   ProdutoDeVendas,
@@ -66,6 +67,12 @@ function produtoDoPedido(valor: unknown): ProdutoDeVendas {
   if (valor === undefined || valor === null || valor === "") return PRODUTO_PADRAO;
   if (!ehProdutoDeVendas(valor)) throw new AppError("Produto desconhecido.", 400);
   return valor;
+}
+
+/** Filtro do painel de números. Vazio = todos os produtos. */
+function produtosDoPainel(valor: unknown): readonly ProdutoDeVendas[] {
+  if (valor === undefined || valor === null || valor === "") return PRODUTOS_DE_VENDAS;
+  return [produtoDoPedido(valor)];
 }
 
 /** Só produto conhecido, URL https e legenda que cabe no WhatsApp. */
@@ -162,7 +169,7 @@ export const listRefs = async (req: Request, res: Response): Promise<Response> =
   const refs = await CampaignRef.findAll({ where: { companyId: req.user.companyId }, order: [["code", "ASC"]] });
   const numero = String(req.query.numero || "");
   const contagem: Array<{ campaignRef: string; total: string }> = await sequelize.query(
-    `SELECT "campaignRef", COUNT(*)::text AS total FROM "Tickets" WHERE "companyId" = :c AND "salesSource" = 'elo_eventos' GROUP BY "campaignRef"`,
+    `SELECT "campaignRef", COUNT(*)::text AS total FROM "Tickets" WHERE "companyId" = :c AND "salesSource" IS NOT NULL GROUP BY "campaignRef"`,
     { replacements: { c: req.user.companyId }, type: QueryTypes.SELECT }
   );
   return res.json(
@@ -259,7 +266,7 @@ async function sugestaoDePessoais(companyId: number) {
         AND NOT EXISTS (
           SELECT 1 FROM "Tickets" t JOIN "TicketTags" tt ON tt."ticketId" = t.id JOIN "Tags" g ON g.id = tt."tagId"
            WHERE t."contactId" = c.id AND g.name ILIKE '%disparo%')
-        AND NOT EXISTS (SELECT 1 FROM "Tickets" t2 WHERE t2."contactId" = c.id AND t2."salesSource" = 'elo_eventos')
+        AND NOT EXISTS (SELECT 1 FROM "Tickets" t2 WHERE t2."contactId" = c.id AND t2."salesSource" IS NOT NULL)
       GROUP BY c.id, c.name, c.number
       ORDER BY MAX(m."createdAt") DESC`,
     { replacements: { companyId, inicio }, type: QueryTypes.SELECT }
@@ -427,24 +434,32 @@ export const dashboard = async (req: Request, res: Response): Promise<Response> 
   const { companyId } = req.user;
   const de = req.query.de ? new Date(String(req.query.de)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const ate = req.query.ate ? new Date(String(req.query.ate)) : new Date();
-  const porCodigo = await sequelize.query<{ campaignRef: string; via: string; leads: number; qualificados: number; demos: number; testes: number; sem_interesse: number; transferidos: number }>(
-    `SELECT COALESCE("campaignRef", '—') AS "campaignRef", COALESCE("salesSourceVia", '—') AS via, COUNT(*)::int AS leads,
+  const produtos = [...produtosDoPainel(req.query.produto)];
+  const porCodigo = await sequelize.query<{ produto: ProdutoDeVendas; campaignRef: string; via: string; leads: number; qualificados: number; demos: number; testes: number; sem_interesse: number; transferidos: number }>(
+    `SELECT "salesSource" AS produto, COALESCE("campaignRef", '—') AS "campaignRef", COALESCE("salesSourceVia", '—') AS via, COUNT(*)::int AS leads,
             COUNT(*) FILTER (WHERE "salesStage" = 'qualificado')::int AS qualificados,
             COUNT(*) FILTER (WHERE "salesStage" = 'demo_solicitada')::int AS demos,
             COUNT(*) FILTER (WHERE "salesStage" = 'teste_solicitado')::int AS testes,
             COUNT(*) FILTER (WHERE "salesStage" = 'sem_interesse')::int AS sem_interesse,
             COUNT(*) FILTER (WHERE "salesStage" = 'transferido')::int AS transferidos
-       FROM "Tickets" WHERE "companyId" = :c AND "salesSource" = 'elo_eventos' AND "attributedAt" BETWEEN :de AND :ate
-      GROUP BY 1, 2 ORDER BY leads DESC`,
-    { replacements: { c: companyId, de, ate }, type: QueryTypes.SELECT }
+       FROM "Tickets" WHERE "companyId" = :c AND "salesSource" IN (:produtos) AND "attributedAt" BETWEEN :de AND :ate
+      GROUP BY 1, 2, 3 ORDER BY leads DESC`,
+    { replacements: { c: companyId, produtos, de, ate }, type: QueryTypes.SELECT }
+  );
+  // Sempre de todos os produtos: é daqui que a tela monta o filtro.
+  const porProduto = await sequelize.query<{ produto: ProdutoDeVendas; leads: number }>(
+    `SELECT "salesSource" AS produto, COUNT(*)::int AS leads
+       FROM "Tickets" WHERE "companyId" = :c AND "salesSource" IN (:todos) AND "attributedAt" BETWEEN :de AND :ate
+      GROUP BY 1 ORDER BY leads DESC`,
+    { replacements: { c: companyId, todos: [...PRODUTOS_DE_VENDAS], de, ate }, type: QueryTypes.SELECT }
   );
   const refs = await CampaignRef.findAll({ where: { companyId }, attributes: ["code", "campaignName", "channel"] });
   const ativas = await Ticket.count({
-    where: { companyId, salesSource: "elo_eventos", status: { [Op.in]: ["open", "pending"] }, lastClientMessageAt: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) } } as any
+    where: { companyId, salesSource: { [Op.in]: produtos }, status: { [Op.in]: ["open", "pending"] }, lastClientMessageAt: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) } } as any
   });
   const recentes = await Ticket.findAll({
-    where: { companyId, salesSource: "elo_eventos" } as any,
-    attributes: ["id", "campaignRef", "salesSourceVia", "salesStage", "salesSummary", "attributedAt", "aiPausedUntil", "status"],
+    where: { companyId, salesSource: { [Op.in]: produtos } } as any,
+    attributes: ["id", "salesSource", "campaignRef", "salesSourceVia", "salesStage", "salesSummary", "attributedAt", "aiPausedUntil", "status"],
     include: [{ model: Contact, as: "contact", attributes: ["name", "number"] }],
     order: [["attributedAt", "DESC"]],
     limit: 50
@@ -452,6 +467,8 @@ export const dashboard = async (req: Request, res: Response): Promise<Response> 
   return res.json({
     periodo: { de, ate },
     etapas: ETAPAS_DE_VENDAS,
+    nomesDosProdutos: NOME_DO_BOT_DE_VENDAS,
+    porProduto,
     conversasAtivas24h: ativas,
     porCodigo: porCodigo.map(l => ({
       ...l,

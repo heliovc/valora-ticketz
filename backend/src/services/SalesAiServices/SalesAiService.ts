@@ -437,12 +437,13 @@ const PARA_SEMPRE = new Date("2100-01-01T00:00:00Z");
 /**
  * Ligar a IA numa conversa: tira a pausa e, se preciso, marca como lead do
  * produto. Trocar de produto recomeça a etapa e o resumo: o que foi dito sobre
- * um produto não vale para o outro.
+ * um produto não vale para o outro. `campanha` é de onde o lead veio (a lista do
+ * funil): é o que separa uma abordagem da outra no painel de números.
  */
-function mudancasParaLigar(ticket: Ticket, produto: ProdutoDeVendas): Record<string, unknown> {
+function mudancasParaLigar(ticket: Ticket, produto: ProdutoDeVendas, campanha?: string): Record<string, unknown> {
   const mudancas: Record<string, unknown> = { aiPausedUntil: null };
   if (ticket.salesSource !== produto) {
-    Object.assign(mudancas, { salesSource: produto, salesSourceVia: "manual", campaignRef: "MANUAL", attributedAt: new Date(), salesStage: "novo", salesSummary: null });
+    Object.assign(mudancas, { salesSource: produto, salesSourceVia: "manual", campaignRef: (campanha || "MANUAL").slice(0, 48), attributedAt: new Date(), salesStage: "novo", salesSummary: null });
   } else if (ticket.salesStage === "transferido") {
     mudancas.salesStage = "qualificado";
   }
@@ -456,17 +457,18 @@ function mudancasParaLigar(ticket: Ticket, produto: ProdutoDeVendas): Record<str
  * Vendas não faz nada e devolve false.
  *
  * `produto`: a automação do funil diz qual bot liga. Sem ele (botão do card)
- * vale o produto que a conversa já tem.
+ * vale o produto que a conversa já tem. `campanha`: nome da lista que ligou.
  */
 export async function ligarValNaConversa(
   ticket: Ticket,
   ligado: boolean,
   porQuem: string,
-  produto?: ProdutoDeVendas
+  produto?: ProdutoDeVendas,
+  campanha?: string
 ): Promise<boolean> {
   if (!(await escopoDeVendas(ticket))) return false;
   const qual = produto ?? produtoDaConversa(ticket.salesSource);
-  await ticket.update((ligado ? mudancasParaLigar(ticket, qual) : { aiPausedUntil: PARA_SEMPRE }) as any);
+  await ticket.update((ligado ? mudancasParaLigar(ticket, qual, campanha) : { aiPausedUntil: PARA_SEMPRE }) as any);
   await AiDecisionLog.create({
     companyId: ticket.companyId,
     ticketId: ticket.id,

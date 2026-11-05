@@ -151,11 +151,12 @@ async function movimentosRecentes(ticketId: number): Promise<number> {
 async function aplicarBot(
   ticket: Ticket,
   ligado: boolean,
-  bot: BotDoFunil
+  bot: BotDoFunil,
+  lista?: string
 ): Promise<void> {
   const produto = produtoDoBot(bot);
   if (produto) {
-    const aplicou = await ligarValNaConversa(ticket, ligado, "funil", produto);
+    const aplicou = await ligarValNaConversa(ticket, ligado, "funil", produto, lista);
     if (!aplicou) {
       logger.info(
         `[funnel] ${bot} não se aplica ticket=${ticket.id}: número fora da Val Vendas`
@@ -402,10 +403,14 @@ async function executar(
     }
 
     if (acao.tipo === "bot_ligar" || acao.tipo === "bot_desligar") {
+      const lista = acao.tagId
+        ? (await Tag.findByPk(acao.tagId))?.name
+        : undefined;
       await aplicarBot(
         ticket,
         acao.tipo === "bot_ligar",
-        botDaAcao(acao.config as any)
+        botDaAcao(acao.config as any),
+        lista
       );
       await run.update({ sentAt: new Date() } as any);
       return;
