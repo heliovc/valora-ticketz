@@ -2,6 +2,7 @@ import {
   aguardarConfirmacao,
   botDaAcao,
   motivoDoEnvioPerdido,
+  motivoDoErroDeEnvio,
   produtoDoBot,
   textoDaFalha,
   botDeveResponder,
@@ -438,6 +439,13 @@ describe("envio que não saiu de verdade", () => {
       "o número não tem WhatsApp (telefone fixo, por exemplo)"
     );
     expect(motivoDoEnvioPerdido(null)).toBe("o WhatsApp não confirmou o envio da mensagem");
+  });
+
+  it("WhatsApp desconectado vira frase; erro desconhecido segue como veio", () => {
+    expect(motivoDoErroDeEnvio("ERR_WAPP_NOT_INITIALIZED")).toBe("a conexão do WhatsApp está desligada");
+    expect(motivoDoErroDeEnvio("Connection Closed")).toBe("a conexão do WhatsApp está desligada");
+    expect(motivoDoErroDeEnvio("ERR_NO_DEF_WAPP_FOUND")).toBe("a conexão do WhatsApp está desligada");
+    expect(motivoDoErroDeEnvio("algo novo")).toBe("algo novo");
   });
 
   it("não repete o prefixo de falha", () => {

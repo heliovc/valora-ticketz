@@ -35,6 +35,7 @@ import {
   aguardarConfirmacao,
   botDaAcao,
   motivoDoEnvioPerdido,
+  motivoDoErroDeEnvio,
   produtoDoBot,
   textoDaFalha,
   clienteRespondeuDesde,
@@ -608,7 +609,12 @@ async function executar(
       `[funnel] enviado ticket=${ticket.id} acao=${acao.id} contato=${ticket.contact.name}`
     );
   } catch (err: any) {
-    await registrarFalha(run, acao, ticket, String(err?.message || "erro desconhecido"));
+    await registrarFalha(
+      run,
+      acao,
+      ticket,
+      motivoDoErroDeEnvio(String(err?.message || "erro desconhecido"))
+    );
   }
 }
 

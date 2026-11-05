@@ -85,6 +85,14 @@ export function motivoDoEnvioPerdido(erro: string | null): string {
     : "o WhatsApp não confirmou o envio da mensagem";
 }
 
+/** Erro do envio em frase de quem usa o funil; o que não for conhecido segue como veio. */
+export function motivoDoErroDeEnvio(erro: string): string {
+  if (/ERR_WAPP_NOT_INITIALIZED|ERR_WAPP_SESSION_EXPIRED|ERR_NO_DEF_WAPP_FOUND|ERR_NO_WAPP_FOUND|Connection Closed/i.test(erro)) {
+    return "a conexão do WhatsApp está desligada";
+  }
+  return erro;
+}
+
 export type ConfirmacaoDeEnvio = { confirmado: boolean; erro: string | null };
 
 /**

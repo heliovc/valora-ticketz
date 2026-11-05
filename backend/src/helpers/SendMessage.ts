@@ -116,6 +116,8 @@ export const SendMessage = async (
 
     return message;
   } catch (err: any) {
-    throw new Error(err);
+    // `new Error(err)` com um AppError virava a mensagem "[object Object]" e
+    // o aviso de falha da automação do funil não dizia o motivo.
+    throw new Error(err?.message || String(err));
   }
 };
