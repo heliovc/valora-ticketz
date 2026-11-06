@@ -346,6 +346,7 @@ async function executar(
     soSemAtendimento && run.createdAt ? await equipeAtendeuDesde(ticket, run.createdAt) : false;
   const decisao = decidirExecucao({
     tipo: acao.tipo,
+    ativo: acao.ativo,
     aindaNaLista,
     exigeLista,
     respeitaExpediente,

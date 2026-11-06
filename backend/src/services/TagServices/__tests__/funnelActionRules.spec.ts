@@ -151,6 +151,18 @@ describe("executar a ação", () => {
     expect(decidirExecucao(base)).toEqual({ acao: "executar" });
   });
 
+  it("descarta o que já estava agendado quando a ação foi desligada", () => {
+    expect(decidirExecucao({ ...base, ativo: false })).toEqual({
+      acao: "descartar",
+      motivo: "ação desligada"
+    });
+  });
+
+  it("segue executando com a ação ligada ou sem a informação", () => {
+    expect(decidirExecucao({ ...base, ativo: true })).toEqual({ acao: "executar" });
+    expect(decidirExecucao({ ...base, ativo: null })).toEqual({ acao: "executar" });
+  });
+
   it("🚨 card que saiu da lista não recebe nada", () => {
     expect(decidirExecucao({ ...base, aindaNaLista: false })).toEqual({
       acao: "descartar",

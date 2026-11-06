@@ -270,7 +270,15 @@ export function decidirExecucao(params: {
   soSemAtendimento?: boolean;
   /** Alguém da equipe escreveu na conversa (ou finalizou) depois do agendamento. */
   equipeAtendeu?: boolean;
+  /** A ação foi desligada depois de agendada? Só `false` conta. */
+  ativo?: boolean | null;
 }): DecisaoDeExecucao {
+  // Desligar a automação vale para o que já estava agendado. Sem isto o
+  // follow-up marcado antes da pausa sairia mesmo com a ação desligada.
+  if (params.ativo === false) {
+    return { acao: "descartar", motivo: "ação desligada" };
+  }
+
   // Mandar "obrigado pela compra" para quem voltou para "negociação" é pior do
   // que não mandar nada. Vale para qualquer tipo: ligar o bot de uma lista que
   // o card já deixou também está errado.
