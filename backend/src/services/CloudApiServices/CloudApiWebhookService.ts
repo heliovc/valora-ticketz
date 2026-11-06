@@ -10,6 +10,7 @@ import { hmacSha256Hex, safeEqualBuffers } from "../../helpers/cloudApiCrypto";
 import { generateBotReply } from "../../helpers/aiBot";
 import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
+import { motivoDoLoopNaConversa } from "../AiBotServices/EvitarLoop";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateContactService";
@@ -396,6 +397,12 @@ async function responderComBot(
       await mensagensRecentes(ticketId)
     );
     if (!pendente) return;
+
+    const loop = await motivoDoLoopNaConversa(ticketId);
+    if (loop) {
+      logger.info(`[aiBot] ticket ${ticketId}: não responde (${loop})`);
+      return;
+    }
 
     const persona = await GetCompanySetting(companyId, "aiBotPersona", "");
     const knowledge = await GetCompanySetting(companyId, "aiBotKnowledge", "");

@@ -75,6 +75,8 @@ export interface RegrasDeAtivacao {
   pararQuandoTransferido: boolean;
   respeitarHorario: boolean;
   aplicarLimites: boolean;
+  /** Não responde agradecimento, conversa encerrada nem troca sem fim com outro robô. */
+  evitarLoop: boolean;
 }
 
 export const REGRAS_PADRAO: RegrasDeAtivacao = {
@@ -90,7 +92,8 @@ export const REGRAS_PADRAO: RegrasDeAtivacao = {
   respeitarAtendente: true,
   pararQuandoTransferido: true,
   respeitarHorario: true,
-  aplicarLimites: true
+  aplicarLimites: true,
+  evitarLoop: true
 };
 
 export function regrasCompletas(parciais?: Record<string, unknown> | null): RegrasDeAtivacao {
@@ -225,6 +228,8 @@ export interface EntradaDaDecisao {
   };
   dentroDoHorario: boolean;
   agora: Date;
+  /** Motivo de `motivoDoLoop` para esta conversa; `null` = sem sinal de loop. */
+  motivoDoLoop?: string | null;
 }
 
 export interface DecisaoDaIa {
@@ -274,6 +279,7 @@ export function shouldAiReply(e: EntradaDaDecisao): DecisaoDaIa {
       return { reply: false, reason: "limite_por_minuto" };
     }
   }
+  if (r.evitarLoop && e.motivoDoLoop) return { reply: false, reason: e.motivoDoLoop };
   if (!e.temPlaybook) return { reply: false, reason: "sem_playbook_ativa" };
   return { reply: true, reason: "ok" };
 }

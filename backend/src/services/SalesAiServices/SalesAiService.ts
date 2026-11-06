@@ -35,6 +35,7 @@ import {
   shouldAiReply,
   textoPadraoDoCodigo
 } from "./salesAiRules";
+import { motivoDoLoopNaConversa } from "../AiBotServices/EvitarLoop";
 
 /**
  * Val Vendas — o motor. As regras vêm de `SalesAiConfigs` (painel da Valora),
@@ -223,9 +224,10 @@ export async function decidir(
   cfg: SalesAiConfig,
   ctx: ContextoDaMensagem = {}
 ): Promise<DecisaoDaIa> {
-  const [contagem, pb] = await Promise.all([
+  const [contagem, pb, loop] = await Promise.all([
     contarIa(ticket.id, ticket.companyId),
-    playbookAtiva(ticket.companyId, produtoDaConversa(ticket.salesSource))
+    playbookAtiva(ticket.companyId, produtoDaConversa(ticket.salesSource)),
+    motivoDoLoopNaConversa(ticket.id, ticket.salesStage)
   ]);
   return shouldAiReply({
     chaveDoAmbiente: chaveDoAmbiente(),
@@ -248,7 +250,8 @@ export async function decidir(
       maxPorMinuto: cfg.maxAiMessagesPerMinute
     },
     dentroDoHorario: dentroDoHorario(cfg.businessHours as HorarioDeFuncionamento, new Date()),
-    agora: new Date()
+    agora: new Date(),
+    motivoDoLoop: loop
   });
 }
 

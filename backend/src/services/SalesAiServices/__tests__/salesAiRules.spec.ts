@@ -122,6 +122,25 @@ describe("shouldAiReply", () => {
   });
 });
 
+describe("shouldAiReply com sinal de loop", () => {
+  it("fica calada com o motivo do loop", () => {
+    expect(shouldAiReply(entrada({ motivoDoLoop: "so_cortesia" }))).toEqual({ reply: false, reason: "so_cortesia" });
+  });
+
+  it("responde quando não há sinal", () => {
+    expect(shouldAiReply(entrada({ motivoDoLoop: null })).reply).toBe(true);
+  });
+
+  it("a regra desligada no painel deixa responder", () => {
+    const regras = { ...REGRAS_PADRAO, evitarLoop: false };
+    expect(shouldAiReply(entrada({ regras, motivoDoLoop: "so_cortesia" })).reply).toBe(true);
+  });
+
+  it("configuração salva antes da regra existir já nasce com ela ligada", () => {
+    expect(regrasCompletas({ aplicarLimites: true }).evitarLoop).toBe(true);
+  });
+});
+
 describe("horário e marcadores", () => {
   it("horário desligado = sempre dentro; ligado respeita dias e horas (Brasília)", () => {
     expect(dentroDoHorario({ ativo: false }, AGORA)).toBe(true);

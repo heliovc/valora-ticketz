@@ -79,6 +79,7 @@ import { transcreverAudioSePossivel } from "../../helpers/transcricaoGemini";
 import { generateBotReply } from "../../helpers/aiBot";
 import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { agruparRajada, separarTurnoAtual } from "../../helpers/aiBotTurn";
+import { motivoDoLoopNaConversa } from "../AiBotServices/EvitarLoop";
 import { ListAiBotFileTextsService } from "../AiBotFileServices/AiBotFileService";
 import { focoDoBot } from "../AiBotServices/FocoDoBotService";
 import { passarParaHumano } from "../AiBotServices/PassarParaHumano";
@@ -1652,6 +1653,12 @@ const responderRajadaComBot = async (
     });
     const { history, pendente } = separarTurnoAtual(recent.reverse());
     if (!pendente) return;
+
+    const loop = await motivoDoLoopNaConversa(ticketId);
+    if (loop) {
+      logger.info(`[aiBot] ticket ${ticketId}: não responde (${loop})`);
+      return;
+    }
 
     const persona = await GetCompanySetting(
       ticket.companyId,
