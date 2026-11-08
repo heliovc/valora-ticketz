@@ -59,6 +59,57 @@ export function videoDoProduto(
   return { url, legenda: String(dados?.videoLegenda ?? "").trim() || null };
 }
 
+export interface TabelaDoProduto {
+  url: string;
+  nome: string;
+}
+
+const NOME_PADRAO_DA_TABELA = "tabela-de-taxas.pdf";
+
+/** Tabela de taxas em PDF configurada no painel. Sem URL https, não há tabela. */
+export function tabelaDoProduto(
+  produtos: Record<string, unknown> | null | undefined,
+  produto: ProdutoDeVendas
+): TabelaDoProduto | null {
+  const dados = (produtos?.[produto] ?? null) as { tabelaUrl?: unknown; tabelaNome?: unknown } | null;
+  const url = String(dados?.tabelaUrl ?? "").trim();
+  if (!/^https:\/\/\S+$/i.test(url)) return null;
+  const nome = String(dados?.tabelaNome ?? "").trim() || NOME_PADRAO_DA_TABELA;
+  return { url, nome: /\.pdf$/i.test(nome) ? nome : `${nome}.pdf` };
+}
+
+const CAMPOS_DO_PRODUTO = ["videoUrl", "videoLegenda", "tabelaUrl", "tabelaNome"] as const;
+
+/**
+ * Junta os ajustes por produto que chegaram do painel com os que já estavam
+ * gravados. Campo que não veio fica como estava: salvar o vídeo não apaga a
+ * tabela, e vice-versa. Lança `Error` com a mensagem para o painel.
+ */
+export function mesclarAjustesDeProdutos(
+  atuais: Record<string, unknown> | null | undefined,
+  bruto: unknown
+): Record<string, unknown> {
+  if (typeof bruto !== "object" || bruto === null || Array.isArray(bruto)) {
+    throw new Error("Ajustes por produto: envie um objeto.");
+  }
+  const saida: Record<string, unknown> = { ...(atuais || {}) };
+  for (const [produto, dados] of Object.entries(bruto as Record<string, unknown>)) {
+    if (!ehProdutoDeVendas(produto)) throw new Error("Produto desconhecido.");
+    const novo = (dados ?? {}) as Record<string, unknown>;
+    const atual = { ...((saida[produto] as Record<string, unknown>) || {}) };
+    for (const campo of CAMPOS_DO_PRODUTO) {
+      if (novo[campo] !== undefined) atual[campo] = String(novo[campo] ?? "").trim();
+    }
+    const https = (v: unknown) => !v || /^https:\/\/\S+$/i.test(String(v));
+    if (!https(atual.videoUrl)) throw new Error("O vídeo precisa de um endereço https.");
+    if (String(atual.videoLegenda ?? "").length > 1000) throw new Error("A legenda do vídeo passou de 1000 caracteres.");
+    if (!https(atual.tabelaUrl)) throw new Error("A tabela precisa de um endereço https.");
+    if (String(atual.tabelaNome ?? "").length > 120) throw new Error("O nome do arquivo da tabela passou de 120 caracteres.");
+    saida[produto] = atual;
+  }
+  return saida;
+}
+
 /** Condições de `shouldAiReply` que o painel liga e desliga. */
 export interface RegrasDeAtivacao {
   /** Só responde conversa com origem Elo Eventos. Desligar = responde qualquer conversa da conexão. */
@@ -304,11 +355,14 @@ export function extrairMarcadoresDeVendas(texto: string): {
   transferir: boolean;
   /** A IA pediu o vídeo de demonstração do produto. */
   video: boolean;
+  /** A IA pediu a tabela de taxas em PDF. */
+  tabela: boolean;
 } {
   let etapa: EtapaDeVendas | null = null;
   let resumo: string | null = null;
   let transferir = false;
   let video = false;
+  let tabela = false;
   const limpo = String(texto || "")
     .replace(/\[\[\s*ETAPA\s*[=:]\s*([a-z_]+)\s*\]\]/gi, (_, v: string) => {
       const e = v.toLowerCase() as EtapaDeVendas;
@@ -327,12 +381,16 @@ export function extrairMarcadoresDeVendas(texto: string): {
       video = true;
       return "";
     })
+    .replace(/\[\[\s*TABELA\s*\]\]/gi, () => {
+      tabela = true;
+      return "";
+    })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   const etapaPedida: EtapaDeVendas | null = etapa;
   if (etapa === "transferido") transferir = true;
   if (transferir) etapa = "transferido";
-  return { texto: limpo, etapa, etapaPedida, resumo, transferir, video };
+  return { texto: limpo, etapa, etapaPedida, resumo, transferir, video, tabela };
 }
 
 // ── Valores iniciais (seed, editáveis no painel) ────────────────────────────

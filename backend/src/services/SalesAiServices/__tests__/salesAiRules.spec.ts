@@ -11,7 +11,9 @@ import {
   regrasCompletas,
   removerCodigo,
   shouldAiReply,
-  videoDoProduto
+  videoDoProduto,
+  tabelaDoProduto,
+  mesclarAjustesDeProdutos
 } from "../salesAiRules";
 
 describe("parser de código ELO-*", () => {
@@ -166,7 +168,7 @@ describe("horário e marcadores", () => {
   });
   it("tira ETAPA, RESUMO e TRANSFERIR do texto", () => {
     const r = extrairMarcadoresDeVendas("Perfeito, vou chamar o Hélio!\n[[ETAPA=demo_solicitada]]\n[[RESUMO=Ana, buffet em Niterói, quer demo]]");
-    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false, video: false });
+    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false, video: false, tabela: false });
     const demoETransferir = extrairMarcadoresDeVendas("Vou chamar o Helio. [[ETAPA=demo_solicitada]] [[TRANSFERIR]]");
     expect(demoETransferir.transferir).toBe(true);
     expect(demoETransferir.etapaPedida).toBe("demo_solicitada");
@@ -246,5 +248,39 @@ describe("vídeo de demonstração", () => {
 
   it("legenda vazia vira nula", () => {
     expect(videoDoProduto({ valora_saude: { videoUrl: "https://a.b/v.mp4", videoLegenda: "  " } }, "valora_saude")?.legenda).toBeNull();
+  });
+});
+
+
+describe("tabela de taxas em PDF", () => {
+  it("[[TABELA]] vira pedido e sai do texto", () => {
+    const m = extrairMarcadoresDeVendas("Te mando a tabela. [[TABELA]]\n[[ETAPA=qualificado]]");
+    expect(m.tabela).toBe(true);
+    expect(m.video).toBe(false);
+    expect(m.texto).toBe("Te mando a tabela.");
+  });
+
+  it("sem marcador, sem tabela", () => {
+    expect(extrairMarcadoresDeVendas("Oi").tabela).toBe(false);
+  });
+
+  it("só https vale e o nome ganha .pdf", () => {
+    expect(tabelaDoProduto({ valora_saude: { tabelaUrl: "http://a.b/t.pdf" } }, "valora_saude")).toBeNull();
+    expect(tabelaDoProduto({ valora_saude: { tabelaUrl: " https://a.b/t.pdf?chave=x ", tabelaNome: "Tabela Saúde" } }, "valora_saude"))
+      .toEqual({ url: "https://a.b/t.pdf?chave=x", nome: "Tabela Saúde.pdf" });
+    expect(tabelaDoProduto({ valora_saude: { tabelaUrl: "https://a.b/t" } }, "valora_saude")?.nome).toBe("tabela-de-taxas.pdf");
+  });
+
+  it("salvar o vídeo não apaga a tabela, e vice-versa", () => {
+    const atuais = { valora_saude: { videoUrl: "https://v.mp4", videoLegenda: "Veja", tabelaUrl: "https://t.pdf" } };
+    expect(mesclarAjustesDeProdutos(atuais, { valora_saude: { videoUrl: "https://v2.mp4", videoLegenda: "Nova" } }))
+      .toEqual({ valora_saude: { videoUrl: "https://v2.mp4", videoLegenda: "Nova", tabelaUrl: "https://t.pdf" } });
+    expect(mesclarAjustesDeProdutos(atuais, { valora_saude: { tabelaUrl: "https://t2.pdf", tabelaNome: "x.pdf" } }).valora_saude)
+      .toEqual({ videoUrl: "https://v.mp4", videoLegenda: "Veja", tabelaUrl: "https://t2.pdf", tabelaNome: "x.pdf" });
+  });
+
+  it("recusa endereço sem https e produto desconhecido", () => {
+    expect(() => mesclarAjustesDeProdutos({}, { valora_saude: { tabelaUrl: "http://t.pdf" } })).toThrow("https");
+    expect(() => mesclarAjustesDeProdutos({}, { outro: {} })).toThrow("Produto desconhecido");
   });
 });

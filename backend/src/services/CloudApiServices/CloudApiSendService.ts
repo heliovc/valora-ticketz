@@ -324,6 +324,29 @@ export async function sendMediaBuffer(
 }
 
 /**
+ * Documento por link, com nome de arquivo e legenda. A Meta baixa o arquivo do
+ * endereço: serve para a tabela de taxas em PDF, gerada pela plataforma.
+ */
+export async function sendDocument(
+  whatsapp: Whatsapp,
+  to: string,
+  link: string,
+  nome: string,
+  legenda: string
+): Promise<EnvioResultado> {
+  return postMessage(whatsapp, montarDocumento(to, link, nome, legenda));
+}
+
+/** Corpo do envio de documento, separado para teste. */
+export function montarDocumento(to: string, link: string, nome: string, legenda: string): Record<string, unknown> {
+  return {
+    to: (to || "").replace(/\D/g, ""),
+    type: "document",
+    document: { link, filename: nome, ...(legenda ? { caption: legenda.slice(0, 1024) } : {}) }
+  };
+}
+
+/**
  * Marca como lida no celular do cliente (os dois tiques azuis do lado dele).
  * Falha aqui é cosmética — nunca deve derrubar o atendimento.
  */

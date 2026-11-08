@@ -51,6 +51,7 @@ import {
 import { extrairMarcadoresDeVendas } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
 import { marcarEntregaRecusada } from "../TagServices/entregaRecusada";
+import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
 import {
   encaminharParaValora,
@@ -386,9 +387,9 @@ async function responderDeVendas(
     },
     companyId: whatsapp.companyId
   });
-  if (extrairMarcadoresDeVendas(resposta.text).video) {
-    await enviarVideoDeVendas(ticket, cfg, atual);
-  }
+  const pedidos = extrairMarcadoresDeVendas(resposta.text);
+  if (pedidos.video) await enviarVideoDeVendas(ticket, cfg, atual);
+  if (pedidos.tabela) await enviarTabelaDeVendas(ticket, cfg, atual);
 }
 
 /**

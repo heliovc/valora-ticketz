@@ -32,6 +32,7 @@ import {
   ehProdutoDeVendas,
   linkDoWhatsapp,
   lerComandoVal,
+  mesclarAjustesDeProdutos,
   normalizarTelefone,
   regrasCompletas,
   textoPadraoDoCodigo
@@ -75,22 +76,13 @@ function produtosDoPainel(valor: unknown): readonly ProdutoDeVendas[] {
   return [produtoDoPedido(valor)];
 }
 
-/** Só produto conhecido, URL https e legenda que cabe no WhatsApp. */
-function produtosValidos(bruto: unknown): Record<string, unknown> {
-  if (typeof bruto !== "object" || bruto === null || Array.isArray(bruto)) {
-    throw new AppError("Ajustes por produto: envie um objeto.", 400);
+/** Só produto conhecido, URL https e textos que cabem no WhatsApp. Campo que não veio fica como estava. */
+function produtosValidos(atuais: Record<string, unknown> | null | undefined, bruto: unknown): Record<string, unknown> {
+  try {
+    return mesclarAjustesDeProdutos(atuais, bruto);
+  } catch (err: any) {
+    throw new AppError(err?.message || "Ajustes por produto inválidos.", 400);
   }
-  const saida: Record<string, unknown> = {};
-  for (const [produto, dados] of Object.entries(bruto as Record<string, unknown>)) {
-    if (!ehProdutoDeVendas(produto)) throw new AppError("Produto desconhecido.", 400);
-    const d = (dados ?? {}) as { videoUrl?: unknown; videoLegenda?: unknown };
-    const videoUrl = String(d.videoUrl ?? "").trim();
-    const videoLegenda = String(d.videoLegenda ?? "").trim();
-    if (videoUrl && !/^https:\/\/\S+$/i.test(videoUrl)) throw new AppError("O vídeo precisa de um endereço https.", 400);
-    if (videoLegenda.length > 1000) throw new AppError("A legenda do vídeo passou de 1000 caracteres.", 400);
-    saida[produto] = { videoUrl, videoLegenda };
-  }
-  return saida;
 }
 
 function inteiro(v: unknown, min: number, max: number, campo: string): number {
@@ -130,7 +122,7 @@ export const updateConfig = async (req: Request, res: Response): Promise<Respons
     mudancas.whatsappIds = ids;
   }
   if (mudancas.rules !== undefined) mudancas.rules = regrasCompletas(mudancas.rules as Record<string, unknown>);
-  if (mudancas.produtos !== undefined) mudancas.produtos = { ...(cfg.produtos || {}), ...produtosValidos(mudancas.produtos) };
+  if (mudancas.produtos !== undefined) mudancas.produtos = produtosValidos(cfg.produtos, mudancas.produtos);
   await cfg.update(mudancas as any);
   return res.json(await serializarConfig(cfg));
 };

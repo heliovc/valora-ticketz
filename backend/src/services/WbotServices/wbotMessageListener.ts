@@ -44,6 +44,7 @@ import {
 } from "../SalesAiServices/SalesAiService";
 import { DecisaoDaIa, extrairMarcadoresDeVendas, lerComandoVal } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
+import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
@@ -1758,7 +1759,9 @@ const responderRajadaDeVendas = async (
     falha: !!reply.falha
   });
   if (texto) await SendWhatsAppMessage({ body: texto, ticket, sentBy: "ai" });
-  if (extrairMarcadoresDeVendas(reply.text).video) await enviarVideoDeVendas(ticket, cfg);
+  const pedidos = extrairMarcadoresDeVendas(reply.text);
+  if (pedidos.video) await enviarVideoDeVendas(ticket, cfg);
+  if (pedidos.tabela) await enviarTabelaDeVendas(ticket, cfg);
 };
 
 const handleMessage = async (
