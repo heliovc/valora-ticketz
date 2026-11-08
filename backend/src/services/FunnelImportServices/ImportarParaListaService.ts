@@ -1,6 +1,7 @@
 import { Op, WhereOptions } from "sequelize";
 import AppError from "../../errors/AppError";
 import Contact from "../../models/Contact";
+import Message from "../../models/Message";
 import Tag from "../../models/Tag";
 import Ticket from "../../models/Ticket";
 import TicketTag from "../../models/TicketTag";
@@ -22,11 +23,48 @@ import { ticketTagAdd, ticketTagRemove } from "../TicketTagServices/TicketTagSer
 
 const MAX_POR_IMPORTACAO = 2000;
 
+/**
+ * Quem recebeu mensagem nossa por outro número da empresa neste prazo não é
+ * importado: o mesmo lead abordado pelos dois números vira denúncia, e
+ * denúncia derruba número (restrição da Meta em 06/11/2026).
+ */
+export const DIAS_SEM_REPETIR_LEAD = 30;
+
 export interface ResultadoDaImportacao {
   criados: number;
   movidos: number;
   jaNaLista: number;
+  /** Pulados porque outro número da empresa falou com eles nos últimos 30 dias. */
+  abordadosPeloOutroNumero: number;
   invalidos: string[];
+}
+
+/** O contato recebeu mensagem nossa por outra conexão da empresa desde `desde`? */
+export async function abordadoPorOutroNumero(
+  companyId: number,
+  contactId: number,
+  conexao: Whatsapp,
+  desde: Date
+): Promise<boolean> {
+  // Card sem conexão é da conexão padrão: só conta como "outro número" quando
+  // a importação não é para a padrão.
+  const outraConexao: WhereOptions<Ticket> = conexao.isDefault
+    ? { whatsappId: { [Op.ne]: conexao.id } }
+    : { [Op.or]: [{ whatsappId: { [Op.ne]: conexao.id } }, { whatsappId: null }] };
+  const cards = await Ticket.findAll({
+    where: { companyId, contactId, ...outraConexao },
+    attributes: ["id"]
+  });
+  if (!cards.length) return false;
+  const nossa = await Message.findOne({
+    where: {
+      ticketId: { [Op.in]: cards.map(c => c.id) },
+      fromMe: true,
+      createdAt: { [Op.gte]: desde }
+    } as any,
+    attributes: ["id"]
+  });
+  return !!nossa;
 }
 
 export async function importarParaLista(
@@ -79,8 +117,10 @@ export async function importarParaLista(
     criados: 0,
     movidos: 0,
     jaNaLista: 0,
+    abordadosPeloOutroNumero: 0,
     invalidos
   };
+  const desde = new Date(Date.now() - DIAS_SEM_REPETIR_LEAD * 24 * 60 * 60 * 1000);
 
   for (const destinatario of validos) {
     // eslint-disable-next-line no-await-in-loop
@@ -94,6 +134,14 @@ export async function importarParaLista(
       // Contato que só tinha o número como nome ganha o nome da planilha.
       // eslint-disable-next-line no-await-in-loop
       await contato.update({ name: destinatario.name });
+    }
+    if (
+      contato &&
+      // eslint-disable-next-line no-await-in-loop
+      (await abordadoPorOutroNumero(companyId, contato.id, conexao, desde))
+    ) {
+      resultado.abordadosPeloOutroNumero += 1;
+      continue;
     }
     if (!contato) {
       // eslint-disable-next-line no-await-in-loop

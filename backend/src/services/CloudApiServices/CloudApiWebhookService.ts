@@ -48,6 +48,8 @@ import {
   escopoDeVendas,
   promptDeVendas
 } from "../SalesAiServices/SalesAiService";
+import { extrairMarcadoresDeVendas } from "../SalesAiServices/salesAiRules";
+import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
 
 /**
@@ -351,6 +353,9 @@ async function responderDeVendas(
     },
     companyId: whatsapp.companyId
   });
+  if (extrairMarcadoresDeVendas(resposta.text).video) {
+    await enviarVideoDeVendas(ticket, cfg, atual);
+  }
 }
 
 /**

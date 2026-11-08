@@ -184,6 +184,29 @@ export async function sendImage(
 }
 
 /**
+ * Vídeo por link público, com legenda. A Meta baixa o arquivo do endereço:
+ * serve para o vídeo de demonstração, que já é público no site. MP4 (H.264 e
+ * AAC), até 16 MB.
+ */
+export async function sendVideo(
+  whatsapp: Whatsapp,
+  to: string,
+  link: string,
+  legenda: string
+): Promise<EnvioResultado> {
+  return postMessage(whatsapp, montarVideo(to, link, legenda));
+}
+
+/** Corpo do envio de vídeo, separado para teste. */
+export function montarVideo(to: string, link: string, legenda: string): Record<string, unknown> {
+  return {
+    to: (to || "").replace(/\D/g, ""),
+    type: "video",
+    video: { link, ...(legenda ? { caption: legenda.slice(0, 1024) } : {}) }
+  };
+}
+
+/**
  * Marca como lida no celular do cliente (os dois tiques azuis do lado dele).
  * Falha aqui é cosmética — nunca deve derrubar o atendimento.
  */

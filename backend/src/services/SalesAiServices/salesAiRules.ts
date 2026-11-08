@@ -230,6 +230,8 @@ export interface EntradaDaDecisao {
   agora: Date;
   /** Motivo de `motivoDoLoop` para esta conversa; `null` = sem sinal de loop. */
   motivoDoLoop?: string | null;
+  /** O contato é outro número da própria empresa (ex.: o Oficial falando com o QR). */
+  numeroDaEmpresa?: boolean;
 }
 
 export interface DecisaoDaIa {
@@ -254,6 +256,9 @@ export function shouldAiReply(e: EntradaDaDecisao): DecisaoDaIa {
   const r = e.regras;
   if (!e.chaveDoAmbiente) return { reply: false, reason: "chave_do_ambiente_desligada" };
   if (!e.chaveDoPainel) return { reply: false, reason: "chave_do_painel_desligada" };
+  // Fixa, sem chave no painel: com a Val em dois números da casa, uma conversa
+  // entre eles vira robô respondendo robô.
+  if (e.numeroDaEmpresa) return { reply: false, reason: "numero_da_empresa" };
   if (r.bloquearGrupos && (e.mensagem.ehGrupo || e.mensagem.ehTransmissaoOuStatus)) {
     return { reply: false, reason: "grupo_transmissao_ou_status" };
   }

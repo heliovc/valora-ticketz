@@ -141,6 +141,21 @@ describe("shouldAiReply com sinal de loop", () => {
   });
 });
 
+describe("shouldAiReply com outro número da própria empresa", () => {
+  it("fica calada, mesmo com tudo o mais liberado", () => {
+    expect(shouldAiReply(entrada({ numeroDaEmpresa: true }))).toEqual({ reply: false, reason: "numero_da_empresa" });
+  });
+
+  it("vale mesmo com a regra de loop desligada", () => {
+    const regras = { ...REGRAS_PADRAO, evitarLoop: false };
+    expect(shouldAiReply(entrada({ regras, numeroDaEmpresa: true })).reply).toBe(false);
+  });
+
+  it("contato de fora segue atendido", () => {
+    expect(shouldAiReply(entrada({ numeroDaEmpresa: false })).reply).toBe(true);
+  });
+});
+
 describe("horário e marcadores", () => {
   it("horário desligado = sempre dentro; ligado respeita dias e horas (Brasília)", () => {
     expect(dentroDoHorario({ ativo: false }, AGORA)).toBe(true);

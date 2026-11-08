@@ -45,6 +45,8 @@ import {
   respeitaExpedienteSeConfigurado
 } from "../services/TagServices/funnelActionRules";
 import { websocketUpdateTicket } from "../services/TicketServices/UpdateTicketService";
+import { cacheLayer } from "../libs/cache";
+import { dataEmBrasilia, decidirRitmo, lerConfigDoRitmo } from "../helpers/ritmoDoNumero";
 
 /**
  * Alguém da equipe atendeu depois do agendamento? Mensagem nossa que não é da
@@ -124,6 +126,62 @@ interface DadosDaExecucao {
   runId: number;
   actionId: number;
   postergacoes?: number;
+  /** Horário (ms) que o ritmo do número QR já reservou para este envio. */
+  horarioReservado?: number;
+}
+
+const DOIS_DIAS_S = 2 * 24 * 60 * 60;
+
+type EsperaDoRitmo = { esperarMs: number; horarioReservado?: number; motivo: string } | null;
+
+/**
+ * Ritmo do número QR (ver `helpers/ritmoDoNumero.ts`). Devolve `null` quando o
+ * envio sai agora, ou quanto esperar. Estado no Redis por conexão.
+ *
+ * Falha do Redis libera o envio: a fila também depende dele, e uma mensagem
+ * presa para sempre é pior do que uma fora do ritmo.
+ */
+export async function esperaDoRitmo(
+  whatsappId: number,
+  ticketId: number,
+  horarioReservado?: number
+): Promise<EsperaDoRitmo> {
+  const config = lerConfigDoRitmo();
+  if (!config.intervaloMs && !config.maxAberturasPorDia) return null;
+  try {
+    const agora = new Date();
+    const chave = `funil:ritmo:${whatsappId}`;
+    const chaveDoDia = `funil:aberturas:${whatsappId}:${dataEmBrasilia(agora)}`;
+    const [proximo, abertas, nossas] = await Promise.all([
+      cacheLayer.get(chave),
+      cacheLayer.get(chaveDoDia),
+      Message.count({ where: { ticketId, fromMe: true } as any })
+    ]);
+    const ehAbertura = nossas === 0;
+    const aberturasHoje = Number(abertas) || 0;
+    const decisao = decidirRitmo({
+      agora,
+      proximoLivreEm: Number(proximo) || null,
+      horarioReservado: horarioReservado ?? null,
+      aberturasHoje,
+      ehAbertura,
+      config
+    });
+    if (decisao.acao !== "amanha" && decisao.novoProximoLivreEm) {
+      await cacheLayer.set(chave, String(decisao.novoProximoLivreEm), "EX", DOIS_DIAS_S);
+    }
+    if (decisao.acao === "enviar") {
+      if (ehAbertura) await cacheLayer.set(chaveDoDia, String(aberturasHoje + 1), "EX", DOIS_DIAS_S);
+      return null;
+    }
+    if (decisao.acao === "reservar") {
+      return { esperarMs: decisao.esperarMs, horarioReservado: decisao.horarioReservado, motivo: "intervalo" };
+    }
+    return { esperarMs: decisao.esperarMs, motivo: `teto de ${config.maxAberturasPorDia} aberturas no dia` };
+  } catch (err: any) {
+    logger.warn(`[funnel] ritmo indisponível conexao=${whatsappId}: ${err?.message}`);
+    return null;
+  }
 }
 
 /** Empresa sem expediente cadastrado é tratada como sempre aberta. */
@@ -293,7 +351,8 @@ export async function agendarAcoesDoFunil(
 async function executar(
   runId: number,
   actionId: number,
-  postergacoes: number
+  postergacoes: number,
+  horarioReservado?: number
 ): Promise<void> {
   const run = await TagAutomationRun.findByPk(runId);
   if (!run || run.sentAt || run.skippedReason) return;
@@ -584,6 +643,25 @@ async function executar(
       return;
     }
 
+    // Número QR: no máximo um envio automático a cada 2 min e 30 aberturas por dia.
+    const espera = await esperaDoRitmo(whatsapp.id, ticket.id, horarioReservado);
+    if (espera) {
+      await funnelAutomationQueue.add(
+        "Executar",
+        {
+          runId,
+          actionId,
+          postergacoes,
+          ...(espera.horarioReservado ? { horarioReservado: espera.horarioReservado } : {})
+        } as DadosDaExecucao,
+        { delay: espera.esperarMs, removeOnComplete: true }
+      );
+      logger.info(
+        `[funnel] ritmo run=${runId} ticket=${ticket.id} conexao=${whatsapp.id}: ${espera.motivo}, sai em ${Math.round(espera.esperarMs / 1000)}s`
+      );
+      return;
+    }
+
     const enviada = await SendMessage(whatsapp, {
       number: ticket.contact.number,
       body: corpo,
@@ -663,6 +741,11 @@ export async function desligarBotAoSairDaLista(
 
 export function startFunnelAutomationQueue(): void {
   funnelAutomationQueue.process("Executar", (job: { data: DadosDaExecucao }) =>
-    executar(job.data.runId, job.data.actionId, job.data.postergacoes ?? 0)
+    executar(
+      job.data.runId,
+      job.data.actionId,
+      job.data.postergacoes ?? 0,
+      job.data.horarioReservado
+    )
   );
 }
