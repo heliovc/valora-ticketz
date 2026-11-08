@@ -206,6 +206,123 @@ export function montarVideo(to: string, link: string, legenda: string): Record<s
   };
 }
 
+export interface Botao {
+  id: string;
+  title: string;
+}
+
+export interface SecaoDaLista {
+  title?: string;
+  rows: { id: string; title: string; description?: string }[];
+}
+
+/** Limites da Meta para mensagem interativa: o envio é recusado acima disso. */
+const LIMITE = { botoes: 3, tituloBotao: 20, corpo: 1024, linhas: 10, tituloLinha: 24, descricao: 72, botaoLista: 20, id: 200 };
+
+const corta = (s: string, n: number) => (s || "").trim().slice(0, n);
+
+/**
+ * Botões de resposta rápida (até 3). Corpo separado para teste. Só dentro da
+ * janela de 24h — fora dela, só template.
+ */
+export function montarBotoes(to: string, texto: string, botoes: Botao[]): Record<string, unknown> {
+  if (!botoes.length || botoes.length > LIMITE.botoes) {
+    throw new AppError(`Mensagem com botões precisa de 1 a ${LIMITE.botoes} botões.`);
+  }
+  return {
+    to: (to || "").replace(/\D/g, ""),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: corta(texto, LIMITE.corpo) },
+      action: {
+        buttons: botoes.map(b => ({
+          type: "reply",
+          reply: { id: corta(b.id, LIMITE.id), title: corta(b.title, LIMITE.tituloBotao) }
+        }))
+      }
+    }
+  };
+}
+
+/** Lista de opções (até 10 linhas no total). Corpo separado para teste. */
+export function montarLista(to: string, texto: string, botao: string, secoes: SecaoDaLista[]): Record<string, unknown> {
+  const total = secoes.reduce((n, s) => n + s.rows.length, 0);
+  if (!total || total > LIMITE.linhas) {
+    throw new AppError(`Lista precisa de 1 a ${LIMITE.linhas} opções.`);
+  }
+  return {
+    to: (to || "").replace(/\D/g, ""),
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: corta(texto, LIMITE.corpo) },
+      action: {
+        button: corta(botao, LIMITE.botaoLista),
+        sections: secoes.map(s => ({
+          ...(s.title ? { title: corta(s.title, LIMITE.tituloLinha) } : {}),
+          rows: s.rows.map(r => ({
+            id: corta(r.id, LIMITE.id),
+            title: corta(r.title, LIMITE.tituloLinha),
+            ...(r.description ? { description: corta(r.description, LIMITE.descricao) } : {})
+          }))
+        }))
+      }
+    }
+  };
+}
+
+export async function sendButtons(whatsapp: Whatsapp, to: string, texto: string, botoes: Botao[]): Promise<EnvioResultado> {
+  return postMessage(whatsapp, montarBotoes(to, texto, botoes));
+}
+
+export async function sendList(
+  whatsapp: Whatsapp,
+  to: string,
+  texto: string,
+  botao: string,
+  secoes: SecaoDaLista[]
+): Promise<EnvioResultado> {
+  return postMessage(whatsapp, montarLista(to, texto, botao, secoes));
+}
+
+/**
+ * Imagem, vídeo ou documento a partir dos bytes: sobe para a Meta (`/media`) e
+ * envia pelo id. Não depende de URL pública.
+ */
+export async function sendMediaBuffer(
+  whatsapp: Whatsapp,
+  to: string,
+  tipo: "image" | "video" | "document",
+  arquivo: Buffer,
+  mimeType: string,
+  filename: string,
+  legenda: string
+): Promise<EnvioResultado> {
+  const token = getToken(whatsapp);
+  let mediaId: string;
+  try {
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", mimeType);
+    form.append("file", new Blob([new Uint8Array(arquivo)], { type: mimeType }), filename || "arquivo");
+    const { data } = await axios.post(graphUrl(`${whatsapp.cloudApiPhoneNumberId}/media`), form, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 60000,
+      maxBodyLength: 100 * 1024 * 1024
+    });
+    mediaId = data?.id;
+    if (!mediaId) throw new Error("a Meta não devolveu o id da mídia");
+  } catch (err: any) {
+    logger.error({ status: err?.response?.status, data: err?.response?.data, tipo }, "CloudApi: falha ao subir mídia");
+    throw new AppError(traduzErro(err), 400);
+  }
+  const conteudo: Record<string, unknown> = { id: mediaId };
+  if (legenda) conteudo.caption = legenda.slice(0, 1024);
+  if (tipo === "document" && filename) conteudo.filename = filename;
+  return postMessage(whatsapp, { to: (to || "").replace(/\D/g, ""), type: tipo, [tipo]: conteudo });
+}
+
 /**
  * Marca como lida no celular do cliente (os dois tiques azuis do lado dele).
  * Falha aqui é cosmética — nunca deve derrubar o atendimento.

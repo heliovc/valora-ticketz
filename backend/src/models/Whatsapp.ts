@@ -163,6 +163,14 @@ class Whatsapp extends Model<Whatsapp> {
   @Default(false)
   @Column
   ownBoard: boolean;
+
+  /**
+   * Consultora virtual do Conteúdo IA (Valora): "off" | "autorizados" | "todos".
+   * Ver a migration 20261108160000 e `ValoraConteudoServices`.
+   */
+  @Default("off")
+  @Column(DataType.STRING(20))
+  valoraConteudoIa: string;
 }
 
 export default Whatsapp;

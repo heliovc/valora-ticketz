@@ -51,6 +51,11 @@ import {
 import { extrairMarcadoresDeVendas } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
+import {
+  encaminharParaValora,
+  modoDaConexao,
+  montarEncaminhamento
+} from "../ValoraConteudoServices/EncaminharConteudo";
 
 /**
  * Recebimento do WhatsApp Oficial (Meta Cloud API).
@@ -240,6 +245,33 @@ async function processarMensagem(
   const midia = TIPOS_DE_MIDIA.includes(msg?.type)
     ? await baixarMidiaDaMeta(whatsapp, msg, ticket)
     : null;
+
+  // Consultora virtual do Conteúdo IA (Valora): mensagem da dona da loja vai
+  // para a Valora, que responde. Aqui não roda transcrição, funil, Val Vendas
+  // nem bot — a conversa é da consultora. Só fica o registro no painel.
+  if (modoDaConexao(whatsapp) !== "off") {
+    const assumiu = await encaminharParaValora(
+      montarEncaminhamento({ whatsapp, ticketId: ticket.id, contactId: contact.id, value, msg, midia })
+    );
+    if (assumiu) {
+      await CreateMessageService({
+        messageData: {
+          id: wamid,
+          ticketId: ticket.id,
+          contactId: contact.id,
+          body: midia ? msg[msg.type]?.caption || `📎 ${rotuloDaMidia(msg.type)}` : body,
+          fromMe: false,
+          read: true,
+          ...(midia ? { mediaType: midia.mediaType, mediaUrl: midia.mediaUrl } : {}),
+          channel: CHANNEL
+        },
+        companyId
+      });
+      await ticket.update({ lastInboundAt: new Date() });
+      return;
+    }
+  }
+
   // Áudio vira texto quando há um modelo Gemini (da empresa ou da Valora):
   // o bot só lê texto, e cliente de casa de festas manda áudio.
   const transcricao =

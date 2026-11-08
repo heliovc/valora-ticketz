@@ -38,6 +38,7 @@ import webchatRoutes from "./webchatRoutes";
 import cloudApiRoutes from "./cloudApiRoutes";
 import aiBotProvidersRoutes from "./aiBotProvidersRoutes";
 import ostraBotRoutes from "./ostraBotRoutes";
+import valoraConteudoRoutes from "./valoraConteudoRoutes";
 import demoConversasRoutes from "./demoConversasRoutes";
 import siteLeadRoutes from "./siteLeadRoutes";
 import salesAiRoutes from "./salesAiRoutes";
@@ -50,6 +51,8 @@ routes.use(webchatRoutes);
 routes.use(cloudApiRoutes);
 // Assistente Ostra Carioca: autenticado por token próprio, não pelo JWT.
 routes.use(ostraBotRoutes);
+// Consultora do Conteúdo IA (Valora): segredo interno, não o JWT do CRM.
+routes.use(valoraConteudoRoutes);
 routes.use(demoConversasRoutes);
 routes.use(siteLeadRoutes);
 routes.use(salesAiRoutes);
