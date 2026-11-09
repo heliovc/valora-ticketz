@@ -37,6 +37,7 @@ import {
 } from "./salesAiRules";
 import { motivoDoLoopNaConversa } from "../AiBotServices/EvitarLoop";
 import { ehNumeroDaEmpresa } from "../AiBotServices/NumerosProprios";
+import { liberadoParaTesteNoOficial } from "../../helpers/testeDoNumeroDaEmpresa";
 
 /**
  * Val Vendas — o motor. As regras vêm de `SalesAiConfigs` (painel da Valora),
@@ -254,7 +255,9 @@ export async function decidir(
     dentroDoHorario: dentroDoHorario(cfg.businessHours as HorarioDeFuncionamento, new Date()),
     agora: new Date(),
     motivoDoLoop: loop,
-    numeroDaEmpresa: daEmpresa
+    // Exceção temporária de 09/11 (só no Oficial, com prazo): ver o helper.
+    numeroDaEmpresa:
+      daEmpresa && !liberadoParaTesteNoOficial(contact.number, ticket.channel, new Date())
   });
 }
 
