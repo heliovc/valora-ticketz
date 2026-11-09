@@ -154,6 +154,8 @@ export async function testarProvedor(
     if (status === 401 || status === 403 || /API key|invalid_api_key|PERMISSION/i.test(corpo)) erro = "Chave recusada pelo provedor.";
     else if (status === 429) erro = /PerDay/i.test(corpo) ? "Cota do dia esgotada neste modelo." : "Limite de uso atingido agora; tente em instantes.";
     else if (status === 404) erro = "Modelo não encontrado neste provedor.";
-    return { ok: false, erro };
+    // O motivo dado pelo provedor (nunca a chave): sem ele, "Falhou (400)" não diz nada.
+    const motivo = /"message"\s*:\s*"([^"]{1,200})"/.exec(corpo)?.[1];
+    return { ok: false, erro: motivo ? `${erro} ${motivo}` : erro };
   }
 }

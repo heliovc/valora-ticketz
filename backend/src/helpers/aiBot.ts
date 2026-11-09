@@ -545,28 +545,39 @@ async function chamarCompativelUmaVez(
   model: string,
   extras: Record<string, string>
 ): Promise<{ texto: string; corpo: string }> {
-  const { data } = await axios.post(
-    URL_COMPATIVEL[qual],
-    {
-      model: model || MODELO_PADRAO[qual],
-      max_tokens: MAX_TOKENS,
-      temperature: 0.4,
-      // Nemotron (e outros de raciocínio) escreviam o pensamento em inglês no
-      // texto da resposta, sem marcação, e ele ia para o cliente. Desligado, a
-      // resposta caiu de ~21 s para ~2 s (medido em 27/10).
-      ...(qual === "openrouter" ? { reasoning: { enabled: false } } : {}),
-      messages: [
-        { role: "system", content: systemText },
-        ...turns.map(turn => ({ role: turn.role, content: turn.text }))
-      ]
-    },
-    {
+  const messages = [
+    { role: "system", content: systemText },
+    ...turns.map(turn => ({ role: turn.role, content: turn.text }))
+  ];
+  const ajustes = {
+    temperature: 0.4,
+    // Nemotron (e outros de raciocínio) escreviam o pensamento em inglês no
+    // texto da resposta, sem marcação, e ele ia para o cliente. Desligado, a
+    // resposta caiu de ~21 s para ~2 s (medido em 27/10).
+    ...(qual === "openrouter" ? { reasoning: { enabled: false } } : {})
+  };
+  const enviar = (corpo: Record<string, unknown>) =>
+    axios.post(URL_COMPATIVEL[qual], corpo, {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...extras },
       // O gratuito do OpenRouter leva de 14 a 65 s por resposta (medido em 27/10):
       // com os 15 s do Gemini ele caía sempre por tempo.
       timeout: qual === "openrouter" ? OPENROUTER_TIMEOUT_MS : GEMINI_TIMEOUT_MS
-    }
-  );
+    });
+  const base = { model: model || MODELO_PADRAO[qual], max_tokens: MAX_TOKENS, messages };
+  let data: any;
+  try {
+    ({ data } = await enviar({ ...base, ...ajustes }));
+  } catch (err) {
+    // Modelo que recusa um dos ajustes (ex.: Claude Sonnet 5.5 no OpenRouter
+    // devolve 400 para "raciocínio desligado", 09/11/2026): tenta de novo só com
+    // o essencial, em vez de pular para o modelo seguinte.
+    if (!(axios.isAxiosError(err) && err.response?.status === 400)) throw err;
+    logger.warn(
+      { provider: qual, model, detalhe: JSON.stringify(err.response?.data || "").slice(0, 300) },
+      "[aiBot] 400 com os ajustes; tentando sem eles"
+    );
+    ({ data } = await enviar(base));
+  }
   // Modelos de raciocínio às vezes devolvem o pensamento entre <think>…</think>: nunca vai ao cliente.
   const texto = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   return { texto, corpo: texto ? "" : JSON.stringify(data || "").slice(0, 300) };
