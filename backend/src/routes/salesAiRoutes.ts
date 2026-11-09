@@ -26,6 +26,7 @@ salesAiRoutes.post("/sales-ai/playbook", isAuth, isAdmin, SalesAiController.save
 salesAiRoutes.post("/sales-ai/playbook/:id/activate", isAuth, isAdmin, SalesAiController.activatePlaybook);
 salesAiRoutes.get("/sales-ai/decisions", isAuth, isAdmin, SalesAiController.listDecisions);
 salesAiRoutes.post("/sales-ai/tickets/:ticketId/command", isAuth, SalesAiController.ticketCommand);
+salesAiRoutes.post("/sales-ai/tickets/:ticketId/responder", isAuth, isAdmin, SalesAiController.responderAgora);
 salesAiRoutes.get("/sales-ai/dashboard", isAuth, isAdmin, SalesAiController.dashboard);
 salesAiRoutes.get("/sales-ai/automations", isAuth, isAdmin, SalesAiController.automations);
 

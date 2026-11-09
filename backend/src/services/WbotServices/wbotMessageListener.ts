@@ -1772,6 +1772,13 @@ const responderRajadaDeVendas = async (
   if (pedidos.tabela) await enviarTabelaDeVendas(ticket, cfg);
 };
 
+/** "Responder agora" no número normal: ver `responderAgoraNoOficial`. */
+export const responderAgoraNoQr = async (ticket: Ticket): Promise<void> => {
+  const contact = await Contact.findByPk(ticket.contactId);
+  if (!contact) return;
+  await responderRajadaComBot(ticket.id, contact);
+};
+
 const handleMessage = async (
   msg: WAMessage,
   wbot: Session,

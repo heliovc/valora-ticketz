@@ -17,10 +17,13 @@ import {
   SalesAiConfig,
   SalesPlaybookVersion
 } from "../models/SalesAi";
+import Message from "../models/Message";
 import {
   aplicarComandoVal,
   chaveDoAmbiente,
-  configDaEmpresa
+  configDaEmpresa,
+  decidir,
+  escopoDeVendas
 } from "../services/SalesAiServices/SalesAiService";
 import {
   ETAPAS_DE_VENDAS,
@@ -418,6 +421,34 @@ export const ticketCommand = async (req: Request, res: Response): Promise<Respon
   const resultado = await aplicarComandoVal(ticket, comando, `painel:${req.user.id}`);
   await ticket.reload();
   return res.json({ resultado, aiPausedUntil: ticket.aiPausedUntil, salesSource: ticket.salesSource, salesStage: ticket.salesStage });
+};
+
+/**
+ * A Val responde AGORA o que o lead mandou e ficou sem resposta (09/11/2026:
+ * reinício do motor no meio da rajada e modelos grátis falhando deixaram leads
+ * esperando). Mesmo caminho da resposta normal: decide de novo antes.
+ */
+export const responderAgora = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findOne({ where: { id: Number(req.params.ticketId), companyId: req.user.companyId } });
+  if (!ticket) throw new AppError("Conversa não encontrada.", 404);
+  if (!(await escopoDeVendas(ticket))) throw new AppError("Esta conversa não está numa conexão da Val.", 400);
+  const ultima = await Message.findOne({ where: { ticketId: ticket.id, isDeleted: false } as any, order: [["createdAt", "DESC"]] });
+  if (!ultima || ultima.fromMe) return res.json({ respondeu: false, resultado: "Nada pendente: a última mensagem é nossa." });
+  if (ticket.channel === "whatsapp_official") {
+    const { responderAgoraNoOficial } = await import("../services/CloudApiServices/CloudApiWebhookService");
+    await responderAgoraNoOficial(ticket);
+  } else {
+    const { responderAgoraNoQr } = await import("../services/WbotServices/wbotMessageListener");
+    await responderAgoraNoQr(ticket);
+  }
+  const depois = await Message.findOne({ where: { ticketId: ticket.id, isDeleted: false } as any, order: [["createdAt", "DESC"]] });
+  if (depois && depois.fromMe && depois.id !== ultima.id) {
+    return res.json({ respondeu: true, resultado: "A Val respondeu.", resposta: String(depois.body || "").slice(0, 200) });
+  }
+  await ticket.reload();
+  const contato = await Contact.findByPk(ticket.contactId);
+  const decisao = contato ? await decidir(ticket, contato, (await escopoDeVendas(ticket))!) : null;
+  return res.json({ respondeu: false, resultado: "A Val não respondeu.", motivo: decisao?.reason ?? null });
 };
 
 // ── Painel de leads ─────────────────────────────────────────────────────────

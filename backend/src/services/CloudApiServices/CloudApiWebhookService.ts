@@ -679,3 +679,16 @@ export async function processarEvento(payload: any): Promise<void> {
     );
   }
 }
+
+/**
+ * "Responder agora" (09/11/2026): a Val responde o que o lead mandou e ficou sem
+ * resposta — motor reiniciado no meio da rajada, modelo que falhou, limite. Passa
+ * pelo caminho de sempre, que decide tudo de novo antes de responder.
+ */
+export async function responderAgoraNoOficial(ticket: Ticket): Promise<void> {
+  const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
+  const contact = await Contact.findByPk(ticket.contactId);
+  if (!whatsapp || !contact) return;
+  await responderComBot(whatsapp, ticket.id, contact);
+}
+
