@@ -50,6 +50,7 @@ import {
 } from "../SalesAiServices/SalesAiService";
 import { extrairMarcadoresDeVendas } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
+import { marcarEntregaRecusada } from "../TagServices/entregaRecusada";
 import { SalesAiConfig } from "../../models/SalesAi";
 import {
   encaminharParaValora,
@@ -570,10 +571,10 @@ async function processarStatus(whatsapp: Whatsapp, status: any): Promise<void> {
     // ficava "enviada" para sempre e o atendente nunca sabia.
     const falha = await Message.findByPk(status?.id);
     if (falha && falha.companyId === whatsapp.companyId) {
-      await falha.update({
-        ack: -1,
-        deliveryError: motivoDaFalha(status?.errors?.[0])
-      } as any);
+      const motivo = motivoDaFalha(status?.errors?.[0]);
+      await falha.update({ ack: -1, deliveryError: motivo } as any);
+      // Mensagem de automação: o card ganha a etiqueta vermelha e pode reenviar.
+      await marcarEntregaRecusada(falha, motivo);
       getIO()
         .to(falha.ticketId.toString())
         .emit(`company-${falha.companyId}-appMessage`, {
