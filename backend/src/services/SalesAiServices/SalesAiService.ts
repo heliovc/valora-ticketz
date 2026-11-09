@@ -380,6 +380,41 @@ export async function avisarTransferencia(ticket: Ticket, contact: Contact, cfg:
   }
 }
 
+// ── Limite por minuto: responder depois, não descartar ──────────────────────
+
+/**
+ * Com o limite de respostas por minuto da conta atingido, a mensagem do lead
+ * era DESCARTADA: no disparo em massa de 09/11/2026 várias casas responderam
+ * no mesmo minuto e ficaram sem resposta. Agora a conversa ganha uma nova
+ * tentativa um pouco depois, que decide tudo de novo (pausa, atendente, se o
+ * lead ainda espera). Uma tentativa pendente por conversa, até 5 seguidas.
+ */
+export const ESPERA_DO_LIMITE_MS = 65 * 1000;
+export const MAX_TENTATIVAS_DO_LIMITE = 5;
+const tentativasPendentes = new Map<number, ReturnType<typeof setTimeout>>();
+
+export function tentarDepoisDoLimite(
+  ticketId: number,
+  tentativa: number,
+  refazer: () => Promise<void>,
+  espalhar: () => number = () => Math.floor(Math.random() * 20 * 1000)
+): boolean {
+  if (tentativa > MAX_TENTATIVAS_DO_LIMITE) {
+    logger.warn(`[val-vendas] ticket ${ticketId}: limite por minuto ${tentativa - 1}x seguidas, desistiu`);
+    return false;
+  }
+  if (tentativasPendentes.has(ticketId)) return true;
+  const timer = setTimeout(() => {
+    tentativasPendentes.delete(ticketId);
+    refazer().catch(err =>
+      logger.error({ ticketId, err: err?.message }, "[val-vendas] nova tentativa depois do limite falhou")
+    );
+  }, ESPERA_DO_LIMITE_MS + espalhar());
+  tentativasPendentes.set(ticketId, timer);
+  logger.info(`[val-vendas] ticket ${ticketId}: limite por minuto, tenta de novo (tentativa ${tentativa})`);
+  return true;
+}
+
 // ── Quem enviou cada mensagem nossa ─────────────────────────────────────────
 
 const ORIGEM_FORTE = new Set(["ai", "humano", "automacao"]);

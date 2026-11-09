@@ -46,7 +46,8 @@ import {
   avaliarMensagemRecebida,
   decidir as decidirVendas,
   escopoDeVendas,
-  promptDeVendas
+  promptDeVendas,
+  tentarDepoisDoLimite
 } from "../SalesAiServices/SalesAiService";
 import { extrairMarcadoresDeVendas } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
@@ -336,7 +337,13 @@ async function processarMensagem(
 
   // Val Vendas: decide (e registra) em toda mensagem recebida na conexão.
   const decisaoDeVendas = await avaliarMensagemRecebida(ticket, contact, { messageId: msg.id });
-  if (decisaoDeVendas && !decisaoDeVendas.reply) return;
+  if (decisaoDeVendas && !decisaoDeVendas.reply) {
+    // Muitas respostas no mesmo minuto: responde depois, não descarta.
+    if (decisaoDeVendas.reason === "limite_por_minuto") {
+      tentarDepoisDoLimite(ticket.id, 1, () => responderComBot(whatsapp, ticket.id, contact, 1));
+    }
+    return;
+  }
 
   // A resposta espera o cliente parar de digitar: várias mensagens seguidas
   // recebem uma resposta só, montada do banco quando a rajada termina.
@@ -350,11 +357,19 @@ async function responderDeVendas(
   whatsapp: Whatsapp,
   ticket: Ticket,
   contact: Contact,
-  cfg: SalesAiConfig
+  cfg: SalesAiConfig,
+  tentativa = 0
 ): Promise<void> {
   const atual = (await Contact.findByPk(contact.id)) || contact;
   const decisao = await decidirVendas(ticket, atual, cfg);
-  if (!decisao.reply) return;
+  if (!decisao.reply) {
+    if (decisao.reason === "limite_por_minuto") {
+      tentarDepoisDoLimite(ticket.id, tentativa + 1, () =>
+        responderComBot(whatsapp, ticket.id, contact, tentativa + 1)
+      );
+    }
+    return;
+  }
   const { history, pendente } = separarTurnoAtual(await mensagensRecentes(ticket.id));
   if (!pendente) return;
   const resposta = await generateBotReply({
@@ -402,7 +417,8 @@ async function responderDeVendas(
 async function responderComBot(
   whatsapp: Whatsapp,
   ticketId: number,
-  contact: Contact
+  contact: Contact,
+  tentativa = 0
 ): Promise<void> {
   const { companyId } = whatsapp;
   // Estado de agora, não o de quando a mensagem chegou: durante a espera um
@@ -412,7 +428,7 @@ async function responderComBot(
   const vendas = await escopoDeVendas(ticket);
   if (vendas) {
     try {
-      await responderDeVendas(whatsapp, ticket, contact, vendas);
+      await responderDeVendas(whatsapp, ticket, contact, vendas, tentativa);
     } catch (err: any) {
       logger.error({ ticketId, message: err?.message }, "[val-vendas] Oficial: não respondeu");
     }

@@ -40,7 +40,8 @@ import {
   decidir as decidirVendas,
   escopoDeVendas,
   pausarPorHumano,
-  promptDeVendas
+  promptDeVendas,
+  tentarDepoisDoLimite
 } from "../SalesAiServices/SalesAiService";
 import { DecisaoDaIa, extrairMarcadoresDeVendas, lerComandoVal } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
@@ -1624,7 +1625,8 @@ const handleAiBotReply = async (
 /** Responde de uma vez tudo o que o cliente mandou desde a nossa última fala. */
 const responderRajadaComBot = async (
   ticketId: number,
-  contact: Contact
+  contact: Contact,
+  tentativa = 0
 ): Promise<void> => {
   try {
     // Durante a espera um atendente pode ter assumido ou o bot ter sido
@@ -1638,7 +1640,7 @@ const responderRajadaComBot = async (
     if (!ticket) return;
     const vendas = await escopoDeVendas(ticket);
     if (vendas) {
-      await responderRajadaDeVendas(ticket, await contatoAtual(contact), vendas);
+      await responderRajadaDeVendas(ticket, await contatoAtual(contact), vendas, tentativa);
       return;
     }
     if (ticket.userId) return;
@@ -1730,11 +1732,17 @@ const responderRajadaComBot = async (
 const responderRajadaDeVendas = async (
   ticket: Ticket,
   contact: Contact,
-  cfg: SalesAiConfig
+  cfg: SalesAiConfig,
+  tentativa = 0
 ): Promise<void> => {
   const decisao = await decidirVendas(ticket, contact, cfg);
   if (!decisao.reply) {
     logger.info(`[val-vendas] ticket ${ticket.id}: desistiu na hora de responder (${decisao.reason})`);
+    if (decisao.reason === "limite_por_minuto") {
+      tentarDepoisDoLimite(ticket.id, tentativa + 1, () =>
+        responderRajadaComBot(ticket.id, contact, tentativa + 1)
+      );
+    }
     return;
   }
   const recent = await Message.findAll({
@@ -2204,6 +2212,10 @@ const handleMessage = async (
       if (decisaoDeVendas.reply && bodyMessage) {
         agruparRajada(ticket.id, () => responderRajadaComBot(ticket.id, contact));
         return;
+      }
+      // Muitas respostas no mesmo minuto: responde depois, não descarta.
+      if (decisaoDeVendas.reason === "limite_por_minuto" && bodyMessage) {
+        tentarDepoisDoLimite(ticket.id, 1, () => responderRajadaComBot(ticket.id, contact, 1));
       }
     } else if (
       !msg.key.fromMe &&
