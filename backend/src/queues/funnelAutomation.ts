@@ -460,6 +460,27 @@ async function executar(
       return;
     }
 
+    if (acao.tipo === "etiqueta") {
+      const etiquetaId = Number((acao.config as Record<string, unknown> | null)?.tagId) || 0;
+      // Só etiqueta livre desta empresa: lista do funil (kanban 1) entra por
+      // "mover", que dispara as automações dela; etiqueta não dispara nada.
+      const etiqueta = etiquetaId
+        ? await Tag.findOne({ where: { id: etiquetaId, companyId: run.companyId } })
+        : null;
+      if (!etiqueta || Number((etiqueta as any).kanban) === 1) {
+        await registrarFalha(run, acao, ticket, "a etiqueta escolhida não existe mais");
+        return;
+      }
+      await TicketTag.findOrCreate({
+        where: { ticketId: ticket.id, tagId: etiqueta.id },
+        defaults: { ticketId: ticket.id, tagId: etiqueta.id } as any
+      });
+      websocketUpdateTicket(ticket);
+      await run.update({ sentAt: new Date() } as any);
+      logger.info(`[funnel] etiqueta ticket=${ticket.id} acao=${acao.id} tag=${etiqueta.id}`);
+      return;
+    }
+
     if (acao.tipo === "atribuir") {
       const config = (acao.config || {}) as Record<string, unknown>;
       const ids = Array.isArray(config.userIds) ? (config.userIds as number[]) : [];

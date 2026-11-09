@@ -273,6 +273,19 @@ describe("ação Mover para a lista (27/10/2026)", () => {
   });
 });
 
+describe("ação Pôr etiqueta (09/11/2026)", () => {
+  const base = { id: 1, companyId: 7, ativo: true, umaVezSo: true, atrasoMinutos: 0 };
+  it("é conhecida, silenciosa e roda na hora", () => {
+    expect(ehAcaoSilenciosa("etiqueta")).toBe(true);
+    const d = decidirAgendamento({ ...base, tipo: "etiqueta", config: { tagId: 75 } }, 7, null);
+    expect(d).toEqual({ agendar: true, imediato: true });
+  });
+  it("sem etiqueta escolhida não agenda", () => {
+    const d = decidirAgendamento({ ...base, tipo: "etiqueta", config: {} }, 7, null);
+    expect(d).toEqual({ agendar: false, motivo: "ação de etiqueta sem etiqueta escolhida" });
+  });
+});
+
 describe("qual bot a ação controla", () => {
   it("ação antiga, sem escolha, continua no bot de atendimento", () => {
     expect(botDaAcao(undefined)).toBe("atendimento");

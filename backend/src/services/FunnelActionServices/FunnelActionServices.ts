@@ -178,6 +178,9 @@ function validar(dados: DadosDaAcao): void {
   if (dados.tipo === "mover" && !(Number(dados.config?.tagId) > 0)) {
     throw new AppError("Escolha a lista para onde o card vai.", 400);
   }
+  if (dados.tipo === "etiqueta" && !(Number(dados.config?.tagId) > 0)) {
+    throw new AppError("Escolha a etiqueta que o card recebe.", 400);
+  }
   // Reserva da mensagem no WhatsApp Oficial fora da janela de 24 h.
   const reserva = dados.config?.modeloForaDaJanela as Record<string, unknown> | undefined;
   if (reserva !== undefined && reserva !== null) {

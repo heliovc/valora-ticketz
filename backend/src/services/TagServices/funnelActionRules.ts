@@ -33,7 +33,13 @@ export type TipoDeAcao =
    * fixo|rodizio) e grava como responsável. Pedido do Hélio (29/10/2026): quando
    * a IA passa a conversa, alguém tem nome e sobrenome para responder.
    */
-  | "atribuir";
+  | "atribuir"
+  /**
+   * Põe no card uma etiqueta livre (`config.tagId`, tag com `kanban = 0`), como
+   * "Valora Saude". Pedido do Hélio (09/11/2026): todo card que entra na lista
+   * de leads de um produto sai marcado com o produto.
+   */
+  | "etiqueta";
 
 export interface AcaoDoFunil {
   id: number;
@@ -135,7 +141,8 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
   "email",
   "modelo",
   "mover",
-  "atribuir"
+  "atribuir",
+  "etiqueta"
 ];
 
 /**
@@ -146,7 +153,13 @@ export const TIPOS_CONHECIDOS: TipoDeAcao[] = [
  * para tapar.
  */
 export function ehAcaoSilenciosa(tipo: string): boolean {
-  return tipo === "bot_ligar" || tipo === "bot_desligar" || tipo === "mover" || tipo === "atribuir";
+  return (
+    tipo === "bot_ligar" ||
+    tipo === "bot_desligar" ||
+    tipo === "mover" ||
+    tipo === "atribuir" ||
+    tipo === "etiqueta"
+  );
 }
 
 /**
@@ -196,6 +209,9 @@ export function decidirAgendamento(
   }
   if (acao.tipo === "mover" && !Number(acao.config?.tagId)) {
     return { agendar: false, motivo: "ação de mover sem lista de destino" };
+  }
+  if (acao.tipo === "etiqueta" && !Number(acao.config?.tagId)) {
+    return { agendar: false, motivo: "ação de etiqueta sem etiqueta escolhida" };
   }
 
   if (ultimoDisparo) {
