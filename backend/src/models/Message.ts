@@ -16,7 +16,7 @@ import Ticket from "./Ticket";
 import Company from "./Company";
 import Queue from "./Queue";
 import OldMessage from "./OldMessage";
-import { URLCharEncoder } from "../helpers/URLCharEncoder";
+import { URLCharEncoder, URLExternaEncoder } from "../helpers/URLCharEncoder";
 
 @Table
 class Message extends Model {
@@ -68,7 +68,7 @@ class Message extends Model {
     const value = this.getDataValue("mediaUrl");
     if (value) {
       return value.match(/^https?:\/\//)
-        ? URLCharEncoder(value)
+        ? URLExternaEncoder(value)
         : `${process.env.BACKEND_URL}/public/${URLCharEncoder(value)}`;
     }
     return null;
@@ -79,7 +79,7 @@ class Message extends Model {
     const value = this.getDataValue("thumbnailUrl");
     if (value) {
       return value.match(/^https?:\/\//)
-        ? URLCharEncoder(value)
+        ? URLExternaEncoder(value)
         : `${process.env.BACKEND_URL}/public/${URLCharEncoder(value)}`;
     }
     return null;
