@@ -51,6 +51,7 @@ import {
 } from "../SalesAiServices/SalesAiService";
 import { extrairMarcadoresDeVendas } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
+import { ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
 import { marcarEntregaRecusada } from "../TagServices/entregaRecusada";
 import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
@@ -379,7 +380,9 @@ async function responderDeVendas(
     userMessage: pendente,
     contactName: atual.name,
     files: [],
-    provedores: await provedoresDaEmpresa(whatsapp.companyId)
+    provedores: await provedoresDaEmpresa(whatsapp.companyId),
+    // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
+    ferramentas: (await ferramentasDaVal(ticket, cfg)) ?? undefined
   });
   if (!resposta) return;
   const texto = await aplicarResposta(ticket, atual, cfg, resposta.text, {

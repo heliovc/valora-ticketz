@@ -45,6 +45,7 @@ import {
 } from "../SalesAiServices/SalesAiService";
 import { DecisaoDaIa, extrairMarcadoresDeVendas, lerComandoVal } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
+import { ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
 import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
@@ -1759,7 +1760,9 @@ const responderRajadaDeVendas = async (
     userMessage: pendente,
     contactName: contact.name,
     files: [],
-    provedores: await provedoresDaEmpresa(ticket.companyId)
+    provedores: await provedoresDaEmpresa(ticket.companyId),
+    // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
+    ferramentas: (await ferramentasDaVal(ticket, cfg)) ?? undefined
   });
   if (!reply) return;
   const texto = await aplicarResposta(ticket, contact, cfg, reply.text, {

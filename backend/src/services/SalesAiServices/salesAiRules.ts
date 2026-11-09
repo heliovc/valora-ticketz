@@ -385,6 +385,8 @@ export function extrairMarcadoresDeVendas(texto: string): {
       tabela = true;
       return "";
     })
+    // Comando de ferramenta repetido na resposta final nunca vai para o lead.
+    .replace(/\[\[\s*(?:CONSULTAR_DEMO|MARCAR_DEMO)\b[^\]]*\]\]/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   const etapaPedida: EtapaDeVendas | null = etapa;
