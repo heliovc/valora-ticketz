@@ -377,7 +377,7 @@ async function responderDeVendas(
   const { history, pendente } = separarTurnoAtual(await mensagensRecentes(ticket.id));
   if (!pendente) return;
   const resposta = await generateBotReply({
-    persona: await promptDeVendas(cfg, ticket.salesSource),
+    persona: await promptDeVendas(cfg, ticket.salesSource, atual.id),
     knowledge: "",
     history,
     userMessage: pendente,

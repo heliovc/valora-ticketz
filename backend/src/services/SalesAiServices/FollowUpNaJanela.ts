@@ -65,7 +65,7 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   const { history } = separarTurnoAtual(recentes);
   const horas = Math.round((agora.getTime() - ultimaDoLead.getTime()) / 3600000);
   const resposta = await generateBotReply({
-    persona: await promptDeVendas(cfg, ticket.salesSource),
+    persona: await promptDeVendas(cfg, ticket.salesSource, ticket.contactId),
     knowledge: "",
     history,
     userMessage: instrucaoDoFollowUp(horas),

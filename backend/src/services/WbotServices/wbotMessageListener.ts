@@ -1766,7 +1766,7 @@ const responderRajadaDeVendas = async (
   const { history, pendente } = separarTurnoAtual(recent.reverse());
   if (!pendente) return;
   const reply = await generateBotReply({
-    persona: await promptDeVendas(cfg, ticket.salesSource),
+    persona: await promptDeVendas(cfg, ticket.salesSource, contact.id),
     knowledge: "",
     history,
     userMessage: pendente,
