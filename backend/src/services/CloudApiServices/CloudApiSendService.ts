@@ -197,6 +197,28 @@ export async function sendVideo(
   return postMessage(whatsapp, montarVideo(to, link, legenda));
 }
 
+/**
+ * Imagem por link público, com legenda (fotos do espaço que a casa subiu na
+ * Valora). A Meta baixa do endereço: JPG ou PNG, até 5 MB.
+ */
+export async function sendImageLink(
+  whatsapp: Whatsapp,
+  to: string,
+  link: string,
+  legenda: string
+): Promise<EnvioResultado> {
+  return postMessage(whatsapp, montarImagem(to, link, legenda));
+}
+
+/** Corpo do envio de imagem por link, separado para teste. */
+export function montarImagem(to: string, link: string, legenda: string): Record<string, unknown> {
+  return {
+    to: (to || "").replace(/\D/g, ""),
+    type: "image",
+    image: { link, ...(legenda ? { caption: legenda.slice(0, 1024) } : {}) }
+  };
+}
+
 /** Corpo do envio de vídeo, separado para teste. */
 export function montarVideo(to: string, link: string, legenda: string): Record<string, unknown> {
   return {

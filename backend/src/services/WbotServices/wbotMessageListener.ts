@@ -94,6 +94,8 @@ import {
   extrairPedidoDeSimulacao,
   prepararSimulacao
 } from "../AiBotServices/SimulacaoNoBot";
+import { escolherMidias, extrairPedidoDeMidias, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
+import { enviarMidiasPeloQr } from "../AiBotServices/EnvioDeMidiasDoBot";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
 import { parseToMilliseconds } from "../../helpers/parseToMilliseconds";
@@ -1695,7 +1697,10 @@ const responderRajadaComBot = async (
 
     // No handoff o cliente recebe a mensagem de espera e o ticket fica para o
     // humano. Pedido de simulação no meio da resposta vira imagem.
-    const semAcoes = await executarAcoesDoBot(ticket.id, ticket.companyId, reply.text);
+    const comMidias = await executarAcoesDoBot(ticket.id, ticket.companyId, reply.text);
+    // Fotos/vídeos pedidos com [[ENVIAR_MIDIA]] saem depois de todo o texto.
+    const pedidoDeMidias = extrairPedidoDeMidias(comMidias);
+    const semAcoes = pedidoDeMidias.texto;
     const extraido = extrairPedidoDeSimulacao(semAcoes);
     const antes = limparMarcadores(extraido.antes);
     const depois = limparMarcadores(extraido.depois);
@@ -1715,6 +1720,9 @@ const responderRajadaComBot = async (
       }
     }
     if (depois) await SendWhatsAppMessage({ body: depois, ticket });
+    if (pedidoDeMidias.codigos.length) {
+      await enviarMidiasPeloQr(ticket, escolherMidias(await midiasDaEmpresa(ticket.companyId), pedidoDeMidias.codigos));
+    }
     // Falha de todos os provedores também: avisa uma vez e pausa o bot nesta
     // conversa, em vez de repetir "Só um momento…" a cada mensagem (26/10/2026).
     if (reply.kind === "handoff") {

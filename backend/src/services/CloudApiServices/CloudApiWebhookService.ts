@@ -26,6 +26,8 @@ import {
   extrairPedidoDeSimulacao,
   prepararSimulacao
 } from "../AiBotServices/SimulacaoNoBot";
+import { escolherMidias, extrairPedidoDeMidias, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
+import { enviarMidiasPeloOficial } from "../AiBotServices/EnvioDeMidiasDoBot";
 import {
   atualizarPorStatus,
   ultimoDisparoRecebido
@@ -484,7 +486,10 @@ async function responderComBot(
     // O bot pode pedir a simulação de taxas no meio da resposta: o marcador sai
     // do texto e a imagem é gerada e enviada aqui, com os números da conta.
     // Comandos MOVER/SALVAR executam e saem do texto; o SIMULAR vem depois.
-    const semAcoes = await executarAcoesDoBot(ticket.id, companyId, resposta.text.trim());
+    const comMidias = await executarAcoesDoBot(ticket.id, companyId, resposta.text.trim());
+    // Fotos/vídeos pedidos com [[ENVIAR_MIDIA]] saem depois de todo o texto.
+    const pedidoDeMidias = extrairPedidoDeMidias(comMidias);
+    const semAcoes = pedidoDeMidias.texto;
     const extraido = extrairPedidoDeSimulacao(semAcoes);
     const antes = limparMarcadores(extraido.antes);
     const depois = limparMarcadores(extraido.depois);
@@ -528,6 +533,9 @@ async function responderComBot(
       });
     }
     if (depois) await enviarTexto(depois);
+    if (pedidoDeMidias.codigos.length) {
+      await enviarMidiasPeloOficial(ticket, whatsapp, contact, escolherMidias(await midiasDaEmpresa(companyId), pedidoDeMidias.codigos));
+    }
     // Falha também passa para humano: avisa uma vez, em vez de repetir a cada mensagem.
     if (resposta.kind === "handoff") {
       await passarParaHumano(ticket.id, companyId, { motivo: resposta.motivo, falha: resposta.falha });

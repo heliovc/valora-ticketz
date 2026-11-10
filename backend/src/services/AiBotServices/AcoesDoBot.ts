@@ -9,6 +9,7 @@ import TicketTag from "../../models/TicketTag";
 import Whatsapp from "../../models/Whatsapp";
 import AppError from "../../errors/AppError";
 import { logger } from "../../utils/logger";
+import { blocoDeMidias, midiasDaEmpresa, midiasJaEnviadas } from "./MidiasDoBot";
 import { ticketTagAdd, ticketTagRemove } from "../TicketTagServices/TicketTagServices";
 import {
   CampoQualificavel,
@@ -241,6 +242,13 @@ export async function contextoDeAcoes(ticketId: number, companyId: number): Prom
           preenchidos.map(([nome, valor]) => `- ${nome}: ${valor}`).join("\n")
       );
     }
+  }
+  // Fotos e vídeos que a empresa subiu: o bot pode enviar com [[ENVIAR_MIDIA]].
+  try {
+    const midias = await midiasDaEmpresa(companyId);
+    if (midias.length) partes.push(blocoDeMidias(midias, await midiasJaEnviadas(ticket.id, midias)));
+  } catch (err) {
+    logger.warn({ err, ticketId: ticket.id }, "[aiBot] lista de fotos e vídeos indisponível");
   }
   return partes.join("\n\n");
 }

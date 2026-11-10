@@ -71,7 +71,7 @@ const HANDOFF_TOKEN = "__HUMANO__";
  * É o que permite a regra em linguagem natural na Personalidade.
  */
 const COMANDO_HUMANO = /\[\[\s*HUMANO\b([^\]]*)\]\]/gi;
-const COMANDOS_DE_ACAO = /\[\[\s*(?:MOVER|SALVAR)\b[^\]]*\]\]/gi;
+const COMANDOS_DE_ACAO = /\[\[\s*(?:MOVER|SALVAR|ENVIAR_MIDIA)\b[^\]]*\]\]/gi;
 
 /**
  * O que o cliente recebe quando o bot sai de cena. Silêncio aqui é o pior
@@ -699,7 +699,7 @@ export const generateBotReply = async (
           cobrou = true;
           logger.warn(`[aiBot] resposta afirmou disponibilidade sem consultar; devolvida ao modelo: ${text.slice(0, 120)}`);
           // O texto descartado pode trazer SALVAR/MOVER válidos (ex.: a data que o cliente disse).
-          comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR)\b[^\]]*\]\]/gi) || []));
+          comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR|ENVIAR_MIDIA)\b[^\]]*\]\]/gi) || []));
           turns = [...turns, { role: "assistant", text }, { role: "user", text: cobranca }];
           text = await chamarProvedor(provedor, systemText, turns);
           continue;
@@ -708,7 +708,7 @@ export const generateBotReply = async (
         executadas.push(...chamadas.map(c => c.nome));
         // SALVAR/MOVER escritos junto com a ferramenta não podem se perder: a
         // resposta final é outra, e é dela que as ações são executadas.
-        comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR)\b[^\]]*\]\]/gi) || []));
+        comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR|ENVIAR_MIDIA)\b[^\]]*\]\]/gi) || []));
         const resultado = await params.ferramentas.executar(chamadas);
         turns = [...turns, { role: "assistant", text }, { role: "user", text: resultadoParaOModelo(resultado) }];
         text = await chamarProvedor(provedor, systemText, turns);
