@@ -62,6 +62,7 @@ import {
   modoDaConexao,
   montarEncaminhamento
 } from "../ValoraConteudoServices/EncaminharConteudo";
+import { descreverContatoCompartilhado } from "../../helpers/contatoCompartilhado";
 
 /**
  * Recebimento do WhatsApp Oficial (Meta Cloud API).
@@ -128,7 +129,7 @@ function extrairTexto(msg: any): { body: string; mediaType?: string } {
       };
     }
     case "contacts":
-      return { body: "👤 Contato recebido" };
+      return { body: descreverContatoCompartilhado(msg) };
     case "image":
     case "audio":
     case "video":
