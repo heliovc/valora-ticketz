@@ -99,7 +99,30 @@ export type FerramentasParaOBot = {
   nomes: string[];
   catalogo: string;
   executar: (chamadas: ChamadaDeFerramenta[]) => Promise<string>;
+  /**
+   * Consultas que o sistema faz SOZINHO antes do modelo, a partir da mensagem
+   * do cliente (ex.: ele escreveu uma data → consulta a agenda). Não depende
+   * de o modelo lembrar de consultar.
+   */
+  automaticas?: (mensagem: string, agora: Date) => ChamadaDeFerramenta[];
+  /**
+   * Confere a resposta antes de ir ao cliente: devolve o texto que a manda de
+   * volta ao modelo (ex.: afirmou "livre" sem consultar), ou `null`.
+   */
+  cobrarConsulta?: (resposta: string, executadas: string[]) => string | null;
 };
+
+/** O comando como o modelo escreveria — args com `_` são internos e ficam de fora. */
+function comandoDe(ch: ChamadaDeFerramenta): string {
+  const args = Object.entries(ch.args)
+    .filter(([k]) => !k.startsWith("_"))
+    .map(([k, v]) => ` ${k}="${v}"`)
+    .join("");
+  return `[[${ch.nome}${args}]]`;
+}
+
+const resultadoParaOModelo = (resultado: string) =>
+  `[SISTEMA] Resultado das ferramentas:\n${resultado}\n\nAgora escreva a resposta ao cliente com base nesse resultado. Não repita os comandos já executados.`;
 
 /** Comandos de ferramenta presentes no texto, na ordem. Marcador = [[NOME chave="valor" ...]]. */
 export function extrairChamadas(texto: string, nomes: string[]): ChamadaDeFerramenta[] {
@@ -632,6 +655,28 @@ export const generateBotReply = async (
   );
   let turns = buildTurns(params);
 
+  // Consulta automática: o cliente escreveu uma data → a agenda é consultada
+  // antes de o modelo responder, e ele já lê o resultado. Uma vez só (não por
+  // provedor) e sem custar chamada extra ao modelo.
+  const executadasAntes: string[] = [];
+  const automaticas = params.ferramentas?.automaticas?.(params.userMessage, params.agora || new Date()) || [];
+  if (params.ferramentas && automaticas.length) {
+    try {
+      const resultado = await params.ferramentas.executar(automaticas);
+      if (resultado) {
+        executadasAntes.push(...automaticas.map(c => c.nome));
+        turns = [
+          ...turns,
+          { role: "assistant", text: automaticas.map(comandoDe).join("\n") },
+          { role: "user", text: resultadoParaOModelo(resultado) }
+        ];
+        logger.info(`[aiBot] consulta automática: ${automaticas.map(comandoDe).join(" ")}`);
+      }
+    } catch (err) {
+      logger.warn({ err }, "[aiBot] consulta automática falhou; o modelo segue sem ela");
+    }
+  }
+
   // Um modelo por vez, na ordem da empresa: cota estourada, chave inválida ou
   // queda num deles passa para o próximo sem o cliente perceber.
   for (const provedor of provedores) {
@@ -641,23 +686,31 @@ export const generateBotReply = async (
       // executa e devolve o resultado, e o modelo escreve a resposta final.
       // Poucas rodadas de propósito: uma consulta e uma reserva, nunca um giro.
       const comandosPendentes: string[] = [];
+      const executadas = [...executadasAntes];
+      let cobrou = false;
       let rodadas = 0;
       while (params.ferramentas && rodadas < MAX_RODADAS_DE_FERRAMENTAS) {
         const chamadas = extrairChamadas(text, params.ferramentas.nomes);
-        if (!chamadas.length) break;
+        if (!chamadas.length) {
+          // Afirmou disponibilidade sem consultar: volta ao modelo UMA vez,
+          // antes de o cliente receber.
+          const cobranca = cobrou ? null : params.ferramentas.cobrarConsulta?.(text, executadas) ?? null;
+          if (!cobranca) break;
+          cobrou = true;
+          logger.warn(`[aiBot] resposta afirmou disponibilidade sem consultar; devolvida ao modelo: ${text.slice(0, 120)}`);
+          // O texto descartado pode trazer SALVAR/MOVER válidos (ex.: a data que o cliente disse).
+          comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR)\b[^\]]*\]\]/gi) || []));
+          turns = [...turns, { role: "assistant", text }, { role: "user", text: cobranca }];
+          text = await chamarProvedor(provedor, systemText, turns);
+          continue;
+        }
         rodadas += 1;
+        executadas.push(...chamadas.map(c => c.nome));
         // SALVAR/MOVER escritos junto com a ferramenta não podem se perder: a
         // resposta final é outra, e é dela que as ações são executadas.
         comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR)\b[^\]]*\]\]/gi) || []));
         const resultado = await params.ferramentas.executar(chamadas);
-        turns = [
-          ...turns,
-          { role: "assistant", text },
-          {
-            role: "user",
-            text: `[SISTEMA] Resultado das ferramentas:\n${resultado}\n\nAgora escreva a resposta ao cliente com base nesse resultado. Não repita os comandos já executados.`
-          }
-        ];
+        turns = [...turns, { role: "assistant", text }, { role: "user", text: resultadoParaOModelo(resultado) }];
         text = await chamarProvedor(provedor, systemText, turns);
       }
 

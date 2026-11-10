@@ -6,6 +6,7 @@ import Ticket from "../../models/Ticket";
 import { GetCompanySetting } from "../../helpers/CheckSettings";
 import { logger } from "../../utils/logger";
 import type { ChamadaDeFerramenta, FerramentasParaOBot } from "../../helpers/aiBot";
+import { cobrancaDeConsulta, consultasAutomaticas } from "./consultaDaAgenda";
 
 /**
  * Ferramentas do bot — o que ele CONSULTA antes de responder, diferente das
@@ -114,7 +115,7 @@ export async function ferramentasDoBot(
         data: ch.args.data || (/^\d{4}-\d{2}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
         // Só o mês (o cliente disse "março do ano que vem"): a Valora devolve as datas livres do mês.
         mes: ch.args.mes || (!ch.args.data && /^\d{4}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
-        tipo: ch.args.tipo || salvo("tipo_festa"),
+        tipo: ch.args.tipo || salvo("tipo_festa") || ch.args._tipo,
         convidados: ch.args.convidados || salvo("convidados"),
         salao: ch.args.salao,
         turno: ch.args.turno,
@@ -139,5 +140,11 @@ export async function ferramentasDoBot(
     return resultados.join("\n\n");
   };
 
-  return { nomes, catalogo, executar };
+  return {
+    nomes,
+    catalogo,
+    executar,
+    automaticas: (mensagem, agora) => consultasAutomaticas(nomes, mensagem, agora),
+    cobrarConsulta: (resposta, executadas) => cobrancaDeConsulta(nomes, resposta, executadas)
+  };
 }
