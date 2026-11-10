@@ -26,7 +26,7 @@ import {
   extrairPedidoDeSimulacao,
   prepararSimulacao
 } from "../AiBotServices/SimulacaoNoBot";
-import { escolherMidias, extrairPedidoDeMidias, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
+import { escolherMidias, extrairPedidoDeMidias, garantirMidiasPedidas, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
 import { enviarMidiasPeloOficial } from "../AiBotServices/EnvioDeMidiasDoBot";
 import {
   atualizarPorStatus,
@@ -487,7 +487,11 @@ async function responderComBot(
     // O bot pode pedir a simulação de taxas no meio da resposta: o marcador sai
     // do texto e a imagem é gerada e enviada aqui, com os números da conta.
     // Comandos MOVER/SALVAR executam e saem do texto; o SIMULAR vem depois.
-    const comMidias = await executarAcoesDoBot(ticket.id, companyId, resposta.text.trim());
+    const textoDoModelo =
+      resposta.kind === "reply"
+        ? await garantirMidiasPedidas(ticket.id, companyId, pendente, resposta.text.trim())
+        : resposta.text.trim();
+    const comMidias = await executarAcoesDoBot(ticket.id, companyId, textoDoModelo);
     // Fotos/vídeos pedidos com [[ENVIAR_MIDIA]] saem depois de todo o texto.
     const pedidoDeMidias = extrairPedidoDeMidias(comMidias);
     const semAcoes = pedidoDeMidias.texto;

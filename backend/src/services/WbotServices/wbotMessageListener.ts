@@ -94,7 +94,7 @@ import {
   extrairPedidoDeSimulacao,
   prepararSimulacao
 } from "../AiBotServices/SimulacaoNoBot";
-import { escolherMidias, extrairPedidoDeMidias, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
+import { escolherMidias, extrairPedidoDeMidias, garantirMidiasPedidas, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
 import { enviarMidiasPeloQr } from "../AiBotServices/EnvioDeMidiasDoBot";
 import { botDeveResponder } from "../TagServices/funnelActionRules";
 import { agendarAcoesDoFunil } from "../../queues/funnelAutomation";
@@ -1697,7 +1697,11 @@ const responderRajadaComBot = async (
 
     // No handoff o cliente recebe a mensagem de espera e o ticket fica para o
     // humano. Pedido de simulação no meio da resposta vira imagem.
-    const comMidias = await executarAcoesDoBot(ticket.id, ticket.companyId, reply.text);
+    const textoDoModelo =
+      reply.kind === "reply"
+        ? await garantirMidiasPedidas(ticket.id, ticket.companyId, pendente, reply.text)
+        : reply.text;
+    const comMidias = await executarAcoesDoBot(ticket.id, ticket.companyId, textoDoModelo);
     // Fotos/vídeos pedidos com [[ENVIAR_MIDIA]] saem depois de todo o texto.
     const pedidoDeMidias = extrairPedidoDeMidias(comMidias);
     const semAcoes = pedidoDeMidias.texto;

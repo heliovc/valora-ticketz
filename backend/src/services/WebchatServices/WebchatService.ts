@@ -28,7 +28,7 @@ import {
   extrairPedidoDeSimulacao,
   prepararSimulacao
 } from "../AiBotServices/SimulacaoNoBot";
-import { escolherMidias, extrairPedidoDeMidias, linhaDeLink, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
+import { escolherMidias, extrairPedidoDeMidias, garantirMidiasPedidas, linhaDeLink, midiasDaEmpresa } from "../AiBotServices/MidiasDoBot";
 import { logger } from "../../utils/logger";
 
 /**
@@ -294,8 +294,13 @@ export async function handleVisitorMessage(
         ferramentas: await ferramentasDoBot(ticket.id, companyId)
       });
       // No Chat do Site a simulação sai como texto (o widget não mostra imagem).
-      const comMidias = reply
-        ? await executarAcoesDoBot(ticket.id, companyId, reply.text.trim())
+      const textoDoModelo = !reply
+        ? ""
+        : reply.kind === "reply"
+          ? await garantirMidiasPedidas(ticket.id, companyId, body, reply.text.trim())
+          : reply.text.trim();
+      const comMidias = textoDoModelo
+        ? await executarAcoesDoBot(ticket.id, companyId, textoDoModelo)
         : "";
       // O widget não mostra mídia: as fotos/vídeos pedidos vão como link no fim do texto.
       const pedidoDeMidias = extrairPedidoDeMidias(comMidias);
