@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import { timingSafeEqual } from "crypto";
 import Ticket from "../models/Ticket";
 import Contact from "../models/Contact";
@@ -22,12 +22,30 @@ import {
  * Autenticadas pelo mesmo segredo interno que este motor usa para chamar a
  * Valora (`VALORA_INTERNAL_SECRET`). Sem ele, as rotas respondem 404.
  */
-const segredoConfere = (req: Request): boolean => {
+export const segredoConfere = (req: Request): boolean => {
   const esperado = process.env.VALORA_INTERNAL_SECRET || "";
   const recebido = String(req.headers["x-internal-secret"] || "");
   if (esperado.length < 16 || recebido.length !== esperado.length) return false;
   return timingSafeEqual(new Uint8Array(Buffer.from(recebido)), new Uint8Array(Buffer.from(esperado)));
 };
+
+/** Vídeo de 8 s em 720p passa de 10 MB em base64; o WhatsApp aceita até 16 MB. */
+export const LIMITE_DA_MIDIA = "40mb";
+
+/**
+ * Leitura do corpo da rota de envio, montada ANTES do `express.json` global.
+ * A prévia do post vem em base64 e o limite padrão (100 KB) recusava toda
+ * mídia com 500: a dona pedia o post e ficava sem resposta. O segredo é
+ * conferido antes de ler, para ninguém de fora mandar corpo grande. O parser
+ * global pula o corpo já lido.
+ */
+export const lerCorpoDaConsultora = [
+  (req: Request, res: Response, next: NextFunction): void => {
+    if (segredoConfere(req)) next();
+    else res.status(404).end();
+  },
+  express.json({ limit: LIMITE_DA_MIDIA })
+];
 
 const MODOS = ["off", "autorizados", "todos"];
 

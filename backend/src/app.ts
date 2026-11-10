@@ -15,6 +15,7 @@ import { logger } from "./utils/logger";
 import { messageQueue, sendScheduledMessages } from "./queues";
 import { corsOrigin } from "./helpers/corsOrigin";
 import valoraAuth from "./middleware/valoraAuth";
+import { lerCorpoDaConsultora } from "./controllers/ValoraConteudoController";
 
 class SystemError extends Error {
   code?: string;
@@ -37,6 +38,8 @@ app.use(
   })
 );
 app.use(cookieParser());
+// Prévia do post da consultora (imagem/vídeo em base64): antes do parser global.
+app.use("/valora-internal/conteudo/send", ...lerCorpoDaConsultora);
 app.use(
   express.json({
     /**
