@@ -37,8 +37,8 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
     nomes: ["GERAR_PROPOSTA", "COBRAR_SINAL"],
     texto: [
       "- GERAR_PROPOSTA — monta a proposta com o preço da tabela para o tipo de festa, a data e o número de convidados já salvos, e devolve o LINK para o cliente. Use quando o cliente quiser saber valores ou pedir a proposta. Nunca diga um preço sem ela.",
-      '  Comando: [[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="nome do pacote (opcional: vazio traz todas as opções)" observacao="pedidos fora do pacote (opcional)"]]',
-      "  A proposta só tem os itens e o valor da tabela. Pedido fora do pacote (open bar, decoração extra, horas a mais): passe em observacao — ele fica anotado na proposta como \"a confirmar\" e NÃO entra no valor. Nunca diga que incluiu, nem ofereça adicionar algo que não está no pacote: diga que anota e que o espaço confirma o valor.",
+      '  Comando: [[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="nome do pacote (opcional: vazio traz todas as opções)" extras="Item 1, Item 2 (opcional)" observacao="pedido fora da lista (opcional)"]]',
+      "  extras = os ITENS EXTRAS do espaço que o cliente quer (nome exato da lista da base de conhecimento): eles somam no valor e saem detalhados na proposta. Pedido que não está nem no pacote nem nos extras: passe em observacao — fica anotado como \"a confirmar\" e NÃO entra no valor. Nunca diga que incluiu algo que não voltou como incluído no resultado.",
       "- COBRAR_SINAL — DEPOIS que o cliente disser que quer fechar: aceita a proposta (a opção escolhida) e devolve o Pix do sinal para você enviar. Nunca use sem o cliente pedir para fechar.",
       '  Comando: [[COBRAR_SINAL pacote="nome do pacote (só se a proposta tiver mais de uma opção)"]]'
     ].join("\n")
@@ -129,6 +129,7 @@ export async function ferramentasDoBot(
         turno: ch.args.turno,
         pacote: ch.args.pacote,
         observacao: ch.args.observacao,
+        extras: ch.args.extras,
         servico: ch.args.servico,
         hora: ch.args.hora,
         profissional: ch.args.profissional
