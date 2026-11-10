@@ -13,6 +13,7 @@ import {
   escopoDeVendas,
   promptDeVendas
 } from "../SalesAiServices/SalesAiService";
+import { origemDoUso } from "../SalesAiServices/salesAiRules";
 import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { generateBotReply, BotTurn } from "../../helpers/aiBot";
@@ -243,7 +244,8 @@ export async function handleVisitorMessage(
               history,
               userMessage: body,
               files: [],
-              provedores: await provedoresDaEmpresa(companyId)
+              provedores: await provedoresDaEmpresa(companyId),
+              uso: { companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "webchat" }
             })
           : null;
         const corpo = reply && cfg
@@ -291,7 +293,8 @@ export async function handleVisitorMessage(
         foco,
         acoes: await contextoDeAcoes(ticket.id, companyId),
         provedores,
-        ferramentas: await ferramentasDoBot(ticket.id, companyId)
+        ferramentas: await ferramentasDoBot(ticket.id, companyId),
+        uso: { companyId, ticketId: ticket.id, origem: opts.teste ? "teste" : "atendimento", canal: "webchat" }
       });
       // No Chat do Site a simulação sai como texto (o widget não mostra imagem).
       const textoDoModelo = !reply

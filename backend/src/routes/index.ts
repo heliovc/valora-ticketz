@@ -39,6 +39,7 @@ import cloudApiRoutes from "./cloudApiRoutes";
 import aiBotProvidersRoutes from "./aiBotProvidersRoutes";
 import ostraBotRoutes from "./ostraBotRoutes";
 import valoraConteudoRoutes from "./valoraConteudoRoutes";
+import valoraIaRoutes from "./valoraIaRoutes";
 import demoConversasRoutes from "./demoConversasRoutes";
 import siteLeadRoutes from "./siteLeadRoutes";
 import salesAiRoutes from "./salesAiRoutes";
@@ -53,6 +54,8 @@ routes.use(cloudApiRoutes);
 routes.use(ostraBotRoutes);
 // Consultora do Conteúdo IA (Valora): segredo interno, não o JWT do CRM.
 routes.use(valoraConteudoRoutes);
+// Consumo das IAs (admin da Valora): mesmo segredo interno.
+routes.use(valoraIaRoutes);
 routes.use(demoConversasRoutes);
 routes.use(siteLeadRoutes);
 routes.use(salesAiRoutes);

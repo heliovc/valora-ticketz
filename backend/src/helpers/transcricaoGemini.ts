@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { logger } from "../utils/logger";
 import { provedoresDaEmpresa } from "../services/AiBotServices/AiBotProvidersService";
+import { registrarUsoDaIa } from "../services/AiUsageServices/RegistrarUsoDaIa";
+import { lerUso } from "./usoDaIa";
 
 /**
  * Transcrição de áudio pelo Gemini (entrada de áudio nativa, sem Whisper).
@@ -27,10 +29,14 @@ const MIME_POR_EXTENSAO: Record<string, string> = {
 export async function transcreverAudioSePossivel(
   companyId: number,
   caminho: string,
-  mimeType?: string
+  mimeType?: string,
+  /** Para a tela de consumo: conversa e canal do áudio. */
+  onde: { ticketId?: number | null; canal?: string | null } = {}
 ): Promise<string | null> {
+  let gemini: Awaited<ReturnType<typeof provedoresDaEmpresa>>[number] | undefined;
+  const contexto = { companyId, ticketId: onde.ticketId ?? null, origem: "transcricao", canal: onde.canal ?? null };
   try {
-    const gemini = (await provedoresDaEmpresa(companyId)).find(p => p.provider === "gemini");
+    gemini = (await provedoresDaEmpresa(companyId)).find(p => p.provider === "gemini");
     if (!gemini?.apiKey) return null;
     if (!caminho || !fs.existsSync(caminho)) return null;
     const stat = fs.statSync(caminho);
@@ -54,6 +60,7 @@ export async function transcreverAudioSePossivel(
       },
       { headers: { "Content-Type": "application/json", "X-goog-api-key": gemini.apiKey }, timeout: TIMEOUT_MS }
     );
+    void registrarUsoDaIa(contexto, { ...gemini, model: MODELO_COM_AUDIO }, lerUso("gemini", resposta, MODELO_COM_AUDIO));
     const texto = (resposta?.candidates?.[0]?.content?.parts || [])
       .map((p: { text?: string }) => p?.text || "")
       .join("")
@@ -62,6 +69,7 @@ export async function transcreverAudioSePossivel(
     logger.info({ companyId, bytes: stat.size, chars: texto.length }, "[aiBot] áudio transcrito");
     return texto.slice(0, 4000);
   } catch (err: any) {
+    if (gemini) void registrarUsoDaIa(contexto, { ...gemini, model: MODELO_COM_AUDIO }, { inputTokens: 0, outputTokens: 0, costUsd: null }, err);
     logger.warn({ companyId, message: err?.message }, "[aiBot] transcrição de áudio falhou");
     return null;
   }

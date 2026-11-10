@@ -3,6 +3,8 @@ import AppError from "../../errors/AppError";
 import Setting from "../../models/Setting";
 import { decryptCloudApiToken, encryptCloudApiToken } from "../../helpers/cloudApiCrypto";
 import { logger } from "../../utils/logger";
+import { novoMedidor } from "../../helpers/usoDaIa";
+import { registrarUsoDaIa } from "../AiUsageServices/RegistrarUsoDaIa";
 import {
   MODELO_PADRAO,
   NomeDoProvedor,
@@ -54,7 +56,7 @@ export function provedoresDaValora(): ProvedorDoBot[] {
         for (const it of itens) {
           const provider = String(it?.provider || "").toLowerCase() as NomeDoProvedor;
           if (NOMES.includes(provider) && it?.apiKey) {
-            lista.push({ provider, model: String(it.model || MODELO_PADRAO[provider]), apiKey: String(it.apiKey) });
+            lista.push({ provider, model: String(it.model || MODELO_PADRAO[provider]), apiKey: String(it.apiKey), dona: "valora", final: String(it.apiKey).slice(-4) });
           }
         }
       }
@@ -63,9 +65,10 @@ export function provedoresDaValora(): ProvedorDoBot[] {
     }
   }
   if (lista.length) return lista;
-  if (process.env.ANTHROPIC_API_KEY) lista.push({ provider: "anthropic", model: process.env.AI_BOT_MODEL || MODELO_PADRAO.anthropic, apiKey: process.env.ANTHROPIC_API_KEY });
-  if (process.env.GEMINI_API_KEY) lista.push({ provider: "gemini", model: process.env.AI_BOT_GEMINI_MODEL || MODELO_PADRAO.gemini, apiKey: process.env.GEMINI_API_KEY });
-  if (process.env.GROQ_API_KEY) lista.push({ provider: "groq", model: MODELO_PADRAO.groq, apiKey: process.env.GROQ_API_KEY });
+  const daValora = (p: ProvedorDoBot): ProvedorDoBot => ({ ...p, dona: "valora", final: p.apiKey.slice(-4) });
+  if (process.env.ANTHROPIC_API_KEY) lista.push(daValora({ provider: "anthropic", model: process.env.AI_BOT_MODEL || MODELO_PADRAO.anthropic, apiKey: process.env.ANTHROPIC_API_KEY }));
+  if (process.env.GEMINI_API_KEY) lista.push(daValora({ provider: "gemini", model: process.env.AI_BOT_GEMINI_MODEL || MODELO_PADRAO.gemini, apiKey: process.env.GEMINI_API_KEY }));
+  if (process.env.GROQ_API_KEY) lista.push(daValora({ provider: "groq", model: MODELO_PADRAO.groq, apiKey: process.env.GROQ_API_KEY }));
   return lista;
 }
 
@@ -75,12 +78,40 @@ export async function provedoresDaEmpresa(companyId: number): Promise<ProvedorDo
   const prontos: ProvedorDoBot[] = [];
   for (const g of gravados) {
     try {
-      prontos.push({ provider: g.provider, model: g.model, apiKey: decryptCloudApiToken(g.keyEnc) });
+      prontos.push({ provider: g.provider, model: g.model, apiKey: decryptCloudApiToken(g.keyEnc), dona: "empresa", final: g.final });
     } catch (err: any) {
       logger.error({ companyId, provider: g.provider, message: err?.message }, "[aiBot] chave do modelo ilegível");
     }
   }
   return prontos.length ? prontos : provedoresDaValora();
+}
+
+/**
+ * Todas as chaves em uso (as da Valora e as de cada empresa), decifradas, para
+ * a tela de consumo consultar o saldo no provedor. Uso interno: a chave nunca
+ * sai do motor.
+ */
+export async function todasAsChavesEmUso(): Promise<Array<ProvedorDoBot & { companyId: number | null }>> {
+  const lista: Array<ProvedorDoBot & { companyId: number | null }> = provedoresDaValora().map(p => ({ ...p, companyId: null }));
+  const settings = await Setting.findAll({ where: { key: CHAVE } });
+  for (const st of settings) {
+    // eslint-disable-next-line no-await-in-loop
+    for (const p of await provedoresDaEmpresaSemReserva(st.companyId)) lista.push({ ...p, companyId: st.companyId });
+  }
+  return lista;
+}
+
+/** Só as chaves gravadas pela empresa, sem cair nas da Valora. */
+async function provedoresDaEmpresaSemReserva(companyId: number): Promise<ProvedorDoBot[]> {
+  const prontos: ProvedorDoBot[] = [];
+  for (const g of await lerGravados(companyId)) {
+    try {
+      prontos.push({ provider: g.provider, model: g.model, apiKey: decryptCloudApiToken(g.keyEnc), dona: "empresa", final: g.final });
+    } catch {
+      // Chave ilegível já é avisada em `provedoresDaEmpresa`.
+    }
+  }
+  return prontos;
 }
 
 /** Para a tela: sem a chave, só o final dela. Os da Valora não aparecem. */
@@ -145,8 +176,15 @@ export async function testarProvedor(
   const provedor = provedores[posicao];
   if (!provedor) throw new AppError("Modelo não encontrado. Salve antes de testar.", 404);
   try {
-    const resposta = await chamarProvedor(provedor, "Responda apenas: ok", [{ role: "user", text: "teste" }]);
-    return { ok: true, resposta: resposta.slice(0, 60) };
+    const medidor = novoMedidor();
+    try {
+      const resposta = await chamarProvedor(provedor, "Responda apenas: ok", [{ role: "user", text: "teste" }], medidor);
+      void registrarUsoDaIa({ companyId, origem: "teste" }, provedor, medidor.total());
+      return { ok: true, resposta: resposta.slice(0, 60) };
+    } catch (err) {
+      void registrarUsoDaIa({ companyId, origem: "teste" }, provedor, medidor.total(), err);
+      throw err;
+    }
   } catch (err: any) {
     const status = axios.isAxiosError(err) ? err.response?.status : undefined;
     const corpo = axios.isAxiosError(err) ? JSON.stringify(err.response?.data || "") : "";

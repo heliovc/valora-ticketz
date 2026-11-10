@@ -38,6 +38,11 @@ export function ehProdutoDeVendas(valor: unknown): valor is ProdutoDeVendas {
   return (PRODUTOS_DE_VENDAS as readonly unknown[]).includes(valor);
 }
 
+/** Na tela de consumo das IAs: qual Val gastou. */
+export function origemDoUso(salesSource: string | null | undefined): "val_saude" | "val_vendas" {
+  return produtoDaConversa(salesSource) === "valora_saude" ? "val_saude" : "val_vendas";
+}
+
 /** Conversa sem origem conhecida usa o produto padrão, como antes de existirem dois. */
 export function produtoDaConversa(salesSource: string | null | undefined): ProdutoDeVendas {
   return ehProdutoDeVendas(salesSource) ? salesSource : PRODUTO_PADRAO;

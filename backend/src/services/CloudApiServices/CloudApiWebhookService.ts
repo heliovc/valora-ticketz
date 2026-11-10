@@ -51,7 +51,7 @@ import {
   promptDeVendas,
   tentarDepoisDoLimite
 } from "../SalesAiServices/SalesAiService";
-import { extrairMarcadoresDeVendas } from "../SalesAiServices/salesAiRules";
+import { extrairMarcadoresDeVendas, origemDoUso } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
 import { ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
 import { marcarEntregaRecusada } from "../TagServices/entregaRecusada";
@@ -283,7 +283,10 @@ async function processarMensagem(
   // o bot só lê texto, e cliente de casa de festas manda áudio.
   const transcricao =
     midia?.mediaType === "audio"
-      ? await transcreverAudioSePossivel(companyId, `${getPublicPath()}/${midia.mediaUrl}`, msg?.audio?.mime_type)
+      ? await transcreverAudioSePossivel(companyId, `${getPublicPath()}/${midia.mediaUrl}`, msg?.audio?.mime_type, {
+          ticketId: ticket.id,
+          canal: "oficial"
+        })
       : null;
   const corpo = transcricao
     ? `🎤 ${transcricao}`
@@ -384,6 +387,7 @@ async function responderDeVendas(
     contactName: atual.name,
     files: [],
     provedores: await provedoresDaEmpresa(whatsapp.companyId),
+    uso: { companyId: whatsapp.companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "oficial" },
     // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
     ferramentas: (await ferramentasDaVal(ticket, cfg)) ?? undefined
   });
@@ -479,7 +483,8 @@ async function responderComBot(
       foco,
       acoes: await contextoDeAcoes(ticketId, companyId),
       provedores,
-      ferramentas: await ferramentasDoBot(ticketId, companyId)
+      ferramentas: await ferramentasDoBot(ticketId, companyId),
+      uso: { companyId, ticketId, origem: "atendimento", canal: "oficial" }
     });
 
     if (!resposta || !resposta.text.trim()) return;
