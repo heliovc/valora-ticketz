@@ -3,6 +3,7 @@ import Queue, { Job } from "bull";
 import moment from "moment";
 import { Op, WhereOptions } from "sequelize";
 import { CronJob } from "cron";
+import { iniciarFollowUpNaJanela } from "./services/SalesAiServices/FollowUpNaJanela";
 import { subDays, subMinutes } from "date-fns";
 import { MessageData, SendMessage } from "./helpers/SendMessage";
 import Whatsapp from "./models/Whatsapp";
@@ -612,6 +613,9 @@ const createInvoices = new CronJob("0 * * * * *", async () => {
 });
 
 createInvoices.start();
+
+// Follow-up da Val no WhatsApp Oficial, dentro da janela de 24h (10/11/2026).
+iniciarFollowUpNaJanela();
 
 export async function startQueueProcess() {
   logger.info("Starting queue processing");
