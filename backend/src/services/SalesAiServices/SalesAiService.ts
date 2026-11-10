@@ -23,6 +23,7 @@ import {
   DecisaoDaIa,
   HorarioDeFuncionamento,
   NOME_DO_BOT_DE_VENDAS,
+  PROTOCOLO_DA_INDICACAO,
   ProdutoDeVendas,
   ViaDeOrigem,
   codigoNasPrimeiras,
@@ -38,6 +39,7 @@ import {
 import { motivoDoLoopNaConversa } from "../AiBotServices/EvitarLoop";
 import { ehNumeroDaEmpresa } from "../AiBotServices/NumerosProprios";
 import { liberadoParaTesteNoOficial } from "../../helpers/testeDoNumeroDaEmpresa";
+import { contextoDaIndicacao, encaminharIndicacao, moverParaAtendimento } from "./IndicacaoDaVal";
 
 /**
  * Val Vendas — o motor. As regras vêm de `SalesAiConfigs` (painel da Valora),
@@ -99,10 +101,21 @@ async function playbookAtiva(companyId: number, produto: ProdutoDeVendas): Promi
   return SalesPlaybookVersion.findOne({ where: { companyId, produto, active: true }, order: [["version", "DESC"]] });
 }
 
-/** Persona da conversa: a playbook ativa do produto + o protocolo de marcadores. */
-export async function promptDeVendas(cfg: SalesAiConfig, salesSource: string | null | undefined): Promise<string> {
+/**
+ * Persona da conversa: a playbook ativa do produto + o protocolo de marcadores
+ * + a regra da indicação. Com `contactId`, quem foi indicado por outro lead
+ * vem com o contexto de quem passou o contato.
+ */
+export async function promptDeVendas(
+  cfg: SalesAiConfig,
+  salesSource: string | null | undefined,
+  contactId?: number | null
+): Promise<string> {
   const pb = await playbookAtiva(cfg.companyId, produtoDaConversa(salesSource));
-  return [pb?.content?.trim() || "", (cfg.protocol || "").trim()].filter(Boolean).join("\n\n");
+  const contexto = await contextoDaIndicacao(contactId).catch(() => "");
+  return [pb?.content?.trim() || "", (cfg.protocol || "").trim(), PROTOCOLO_DA_INDICACAO, contexto]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 // ── Atribuição de origem ────────────────────────────────────────────────────
@@ -334,16 +347,29 @@ export async function aplicarResposta(
   const mudancas: Record<string, unknown> = {};
   if (m.etapa) mudancas.salesStage = m.etapa;
   if (m.resumo) mudancas.salesSummary = m.resumo.slice(0, 300);
-  if (m.transferir || sinais.handoff) {
+  // Indicação vence a transferência: a Val para neste card e abre o do indicado.
+  const transferir = (m.transferir || sinais.handoff) && !m.indicacao;
+  if (transferir) {
     // Demo ou teste aceitos também transferem (playbook, seção 8): a etapa
     // continua contando no painel e a IA para pela pausa sem prazo.
     const pedida = m.etapaPedida;
     mudancas.salesStage = pedida === "demo_solicitada" || pedida === "teste_solicitado" ? pedida : "transferido";
-    mudancas.aiPausedUntil = new Date("2100-01-01T00:00:00Z");
   }
+  if (transferir || m.indicacao) mudancas.aiPausedUntil = new Date("2100-01-01T00:00:00Z");
   if (Object.keys(mudancas).length) await ticket.update(mudancas as any);
-  if (m.transferir || sinais.handoff) {
+  if (transferir) {
     await avisarTransferencia(ticket, contact, cfg, m.resumo || ticket.salesSummary || "A playbook pediu transferência.");
+    // Assunto que a Val não resolve: o card espera uma pessoa na lista de atendimento.
+    if (mudancas.salesStage === "transferido") await moverParaAtendimento(ticket, cfg);
+  }
+  if (m.indicacao) {
+    const r = await encaminharIndicacao(ticket, contact, m.indicacao, m.resumo);
+    if (!r.ok) {
+      // Não deu para abrir o card do indicado: vira transferência, com o motivo.
+      await ticket.update({ salesStage: "transferido" } as any);
+      await avisarTransferencia(ticket, contact, cfg, `${r.motivo}. ${m.resumo || ""}`.trim());
+      await moverParaAtendimento(ticket, cfg);
+    }
   }
   // Sem interesse = perdido; demo ou teste aceitos = fechado. Dispara o gatilho
   // do resultado em Automações (mover para "Perdido", desligar a Val...).

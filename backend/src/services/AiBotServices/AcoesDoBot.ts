@@ -131,7 +131,7 @@ async function dadosSalvos(contactId: number): Promise<Record<string, string>> {
 
 // ── Quadro do card ─────────────────────────────────────────
 
-async function listasDoQuadro(ticket: Ticket): Promise<Tag[]> {
+export async function listasDoQuadro(ticket: Ticket): Promise<Tag[]> {
   const conexao = ticket.whatsappId
     ? await Whatsapp.findOne({
         where: { id: ticket.whatsappId, companyId: ticket.companyId },

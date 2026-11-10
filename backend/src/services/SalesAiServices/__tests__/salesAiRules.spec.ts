@@ -5,6 +5,8 @@ import {
   dentroDoHorario,
   extrairCodigo,
   extrairMarcadoresDeVendas,
+  escolherListaDeDisparo,
+  lerIndicacao,
   lerComandoVal,
   normalizarTelefone,
   produtoDaConversa,
@@ -168,7 +170,7 @@ describe("horário e marcadores", () => {
   });
   it("tira ETAPA, RESUMO e TRANSFERIR do texto", () => {
     const r = extrairMarcadoresDeVendas("Perfeito, vou chamar o Hélio!\n[[ETAPA=demo_solicitada]]\n[[RESUMO=Ana, buffet em Niterói, quer demo]]");
-    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false, video: false, tabela: false });
+    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false, video: false, tabela: false, indicacao: null });
     const demoETransferir = extrairMarcadoresDeVendas("Vou chamar o Helio. [[ETAPA=demo_solicitada]] [[TRANSFERIR]]");
     expect(demoETransferir.transferir).toBe(true);
     expect(demoETransferir.etapaPedida).toBe("demo_solicitada");
@@ -282,5 +284,43 @@ describe("tabela de taxas em PDF", () => {
   it("recusa endereço sem https e produto desconhecido", () => {
     expect(() => mesclarAjustesDeProdutos({}, { valora_saude: { tabelaUrl: "http://t.pdf" } })).toThrow("https");
     expect(() => mesclarAjustesDeProdutos({}, { outro: {} })).toThrow("Produto desconhecido");
+  });
+});
+
+describe("indicação de outra pessoa (10/11/2026)", () => {
+  it("lê nome e número, com DDI, e tira o marcador do texto", () => {
+    const r = extrairMarcadoresDeVendas(
+      'Obrigada, Ju! Vamos falar com o Dr. Jorge. [[INDICACAO nome="Dr. Jorge" numero="(21) 97217-2740"]] [[RESUMO=Ju indicou o Dr. Jorge]]'
+    );
+    expect(r.indicacao).toEqual({ nome: "Dr. Jorge", numero: "5521972172740" });
+    expect(r.texto).toBe("Obrigada, Ju! Vamos falar com o Dr. Jorge.");
+    expect(r.resumo).toBe("Ju indicou o Dr. Jorge");
+  });
+
+  it("indicação vence a transferência que a playbook pediu", () => {
+    const r = extrairMarcadoresDeVendas('Vou chamar o Pedro. [[TRANSFERIR]] [[INDICAÇÃO nome="Pedro" numero="21968378637"]] [[ETAPA=transferido]]');
+    expect(r.indicacao?.numero).toBe("5521968378637");
+    expect(r.transferir).toBe(false);
+    expect(r.etapa).toBeNull();
+  });
+
+  it("sem número válido não é indicação (e a transferência segue)", () => {
+    expect(lerIndicacao('nome="Dr. Jorge"')).toBeNull();
+    expect(lerIndicacao('nome="x" numero="1234"')).toBeNull();
+    const r = extrairMarcadoresDeVendas('Vou chamar o Hélio. [[INDICACAO nome="Jorge" numero="sem"]] [[TRANSFERIR]]');
+    expect(r.indicacao).toBeNull();
+    expect(r.transferir).toBe(true);
+    expect(r.texto).toBe("Vou chamar o Hélio.");
+  });
+
+  it("aceita número já com 55 e fixo com 8 dígitos", () => {
+    expect(lerIndicacao('numero="+55 21 2233-4455"')).toEqual({ nome: null, numero: "552122334455" });
+  });
+
+  it("lista de disparo: a atual do card, depois a última por onde passou, depois a mais antiga", () => {
+    expect(escolherListaDeDisparo([71, 80], [80], [71])).toBe(80);
+    expect(escolherListaDeDisparo([71, 80], [5], [80, 71])).toBe(80);
+    expect(escolherListaDeDisparo([80, 71], [], [])).toBe(71);
+    expect(escolherListaDeDisparo([], [71], [71])).toBeNull();
   });
 });

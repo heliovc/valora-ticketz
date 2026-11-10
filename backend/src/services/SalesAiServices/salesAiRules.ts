@@ -340,6 +340,60 @@ export function shouldAiReply(e: EntradaDaDecisao): DecisaoDaIa {
   return { reply: true, reason: "ok" };
 }
 
+// ── Indicação de outra pessoa ───────────────────────────────────────────────
+
+/**
+ * O lead diz que quem cuida do assunto é outra pessoa e passa o telefone dela
+ * (pedido do Hélio, 10/11/2026: "Ju, atendente da clínica, indicou o Dr. Jorge").
+ * Em vez de transferir para o Hélio, a Val abre um card para o indicado, que
+ * recebe a abertura da lista de disparo, e o card de quem indicou é finalizado.
+ */
+export interface IndicacaoDoLead {
+  /** Quem foi indicado, como o lead disse ("Dr. Jorge"). Pode faltar. */
+  nome: string | null;
+  /** Só dígitos, com DDI (55 no Brasil). */
+  numero: string;
+}
+
+/** Regra do sistema que vai junto da playbook: vale para Val Vendas e Val Saúde. */
+export const PROTOCOLO_DA_INDICACAO = [
+  "Indicação de outra pessoa (regra do sistema, vale acima da playbook):",
+  '- Se o lead disser que quem cuida do assunto é outra pessoa e passar o telefone dela (no texto ou num contato compartilhado, que aparece como "👤 Contato: …"), NÃO transfira. Agradeça em uma frase curta, diga que vamos falar com essa pessoa e escreva [[INDICACAO nome="nome da pessoa indicada" numero="DDD e número"]]. Nessa resposta não escreva [[TRANSFERIR]].',
+  "- Se ele indicar a pessoa sem o telefone, peça o WhatsApp dela antes."
+].join("\n");
+
+/** Atributos de `[[INDICACAO nome="Dr. Jorge" numero="(21) 97217-2740"]]`. Sem número válido = null. */
+export function lerIndicacao(atributos: string): IndicacaoDoLead | null {
+  const attr: Record<string, string> = {};
+  for (const m of String(atributos || "").matchAll(/(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s\]]+))/g)) {
+    attr[m[1].toLowerCase()] = (m[2] ?? m[3] ?? m[4] ?? "").trim();
+  }
+  const numero = normalizarTelefone(attr.numero || attr.telefone || attr.whatsapp || "");
+  // Brasil: 55 + DDD + 8 ou 9 dígitos. Fora do Brasil, o tamanho do E.164.
+  const valido = numero.startsWith("55") ? numero.length === 12 || numero.length === 13 : numero.length >= 10 && numero.length <= 15;
+  if (!valido) return null;
+  const nome = (attr.nome || "").replace(/\s+/g, " ").trim().slice(0, 60) || null;
+  return { nome, numero };
+}
+
+/**
+ * Em que lista o indicado entra: a de disparo do produto no quadro do card.
+ * Primeiro a lista em que o card de quem indicou está; depois a última de
+ * disparo por onde ele passou; por fim a mais antiga.
+ */
+export function escolherListaDeDisparo(
+  candidatas: number[],
+  listasAtuais: number[],
+  historicoRecenteAntes: number[]
+): number | null {
+  if (!candidatas.length) return null;
+  const atual = listasAtuais.find(id => candidatas.includes(id));
+  if (atual) return atual;
+  const passou = historicoRecenteAntes.find(id => candidatas.includes(id));
+  if (passou) return passou;
+  return [...candidatas].sort((a, b) => a - b)[0];
+}
+
 // ── Marcadores da resposta ──────────────────────────────────────────────────
 
 /**
@@ -357,13 +411,20 @@ export function extrairMarcadoresDeVendas(texto: string): {
   video: boolean;
   /** A IA pediu a tabela de taxas em PDF. */
   tabela: boolean;
+  /** O lead indicou outra pessoa: vira card novo, não transferência. */
+  indicacao: IndicacaoDoLead | null;
 } {
   let etapa: EtapaDeVendas | null = null;
   let resumo: string | null = null;
   let transferir = false;
   let video = false;
   let tabela = false;
+  let indicacao: IndicacaoDoLead | null = null;
   const limpo = String(texto || "")
+    .replace(/\[\[\s*INDICA[CÇ][AÃ]O\b([^\]]*)\]\]/gi, (_, attrs: string) => {
+      indicacao = indicacao || lerIndicacao(attrs);
+      return "";
+    })
     .replace(/\[\[\s*ETAPA\s*[=:]\s*([a-z_]+)\s*\]\]/gi, (_, v: string) => {
       const e = v.toLowerCase() as EtapaDeVendas;
       if ((ETAPAS_DE_VENDAS as readonly string[]).includes(e)) etapa = e;
@@ -390,9 +451,15 @@ export function extrairMarcadoresDeVendas(texto: string): {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   const etapaPedida: EtapaDeVendas | null = etapa;
+  if (indicacao) {
+    // Indicação vence a transferência: a playbook manda transferir, mas quem
+    // atende o indicado é a própria Val, pelo disparo.
+    transferir = false;
+    if (etapa === "transferido") etapa = null;
+  }
   if (etapa === "transferido") transferir = true;
   if (transferir) etapa = "transferido";
-  return { texto: limpo, etapa, etapaPedida, resumo, transferir, video, tabela };
+  return { texto: limpo, etapa, etapaPedida, resumo, transferir, video, tabela, indicacao };
 }
 
 // ── Valores iniciais (seed, editáveis no painel) ────────────────────────────
