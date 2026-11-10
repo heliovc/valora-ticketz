@@ -28,6 +28,7 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
       "- CONSULTAR_AGENDA — confere se uma data está livre nos salões e, se não estiver, traz datas alternativas. Se o cliente só disse o MÊS, consulta o mês inteiro e devolve as datas livres. Use assim que souber a data ou o mês, e SEMPRE que o cliente perguntar que datas tem — NA HORA, mesmo sem o número de convidados: nunca peça os convidados antes de consultar. Mostre as datas e só depois pergunte os convidados (com eles a resposta fica mais certa).",
       '  Comando com data: [[CONSULTAR_AGENDA data="dd/mm/aaaa"]]',
       '  Comando só com o mês: [[CONSULTAR_AGENDA mes="mm/aaaa"]]',
+      '  Comando com um período ("semana que vem", "fim de semana"): [[CONSULTAR_AGENDA de="dd/mm/aaaa" ate="dd/mm/aaaa"]] — ofereça os dias livres do período; não peça a data exata de novo.',
       "- PRE_RESERVAR — guarda a data por um prazo, sem compromisso, DEPOIS que o cliente disser que quer. Nunca pré-reserve sem o cliente pedir.",
       '  Comando: [[PRE_RESERVAR data="dd/mm/aaaa" salao="nome do salão" turno="nome do turno (só em festa com turno)"]]'
     ].join("\n")
@@ -36,7 +37,8 @@ const CATALOGO: Record<string, { nomes: string[]; texto: string }> = {
     nomes: ["GERAR_PROPOSTA", "COBRAR_SINAL"],
     texto: [
       "- GERAR_PROPOSTA — monta a proposta com o preço da tabela para o tipo de festa, a data e o número de convidados já salvos, e devolve o LINK para o cliente. Use quando o cliente quiser saber valores ou pedir a proposta. Nunca diga um preço sem ela.",
-      '  Comando: [[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="nome do pacote (opcional: vazio traz todas as opções)"]]',
+      '  Comando: [[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="nome do pacote (opcional: vazio traz todas as opções)" observacao="pedidos fora do pacote (opcional)"]]',
+      "  A proposta só tem os itens e o valor da tabela. Pedido fora do pacote (open bar, decoração extra, horas a mais): passe em observacao — ele fica anotado na proposta como \"a confirmar\" e NÃO entra no valor. Nunca diga que incluiu, nem ofereça adicionar algo que não está no pacote: diga que anota e que o espaço confirma o valor.",
       "- COBRAR_SINAL — DEPOIS que o cliente disser que quer fechar: aceita a proposta (a opção escolhida) e devolve o Pix do sinal para você enviar. Nunca use sem o cliente pedir para fechar.",
       '  Comando: [[COBRAR_SINAL pacote="nome do pacote (só se a proposta tiver mais de uma opção)"]]'
     ].join("\n")
@@ -112,14 +114,21 @@ export async function ferramentasDoBot(
         ticketId,
         contatoNome: contato?.name,
         contatoNumero: contato?.number,
-        data: ch.args.data || (/^\d{4}-\d{2}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
+        // Pediu mês ou período: a data salva no cadastro não pode passar por cima.
+        data:
+          ch.args.data ||
+          (!ch.args.mes && !ch.args.de && /^\d{4}-\d{2}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
         // Só o mês (o cliente disse "março do ano que vem"): a Valora devolve as datas livres do mês.
-        mes: ch.args.mes || (!ch.args.data && /^\d{4}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
+        mes: ch.args.mes || (!ch.args.data && !ch.args.de && /^\d{4}-\d{2}$/.test(salvo("data_festa") || "") ? salvo("data_festa") : undefined),
+        // Período aberto ("semana que vem"): os dias livres do período.
+        de: ch.args.de,
+        ate: ch.args.ate,
         tipo: ch.args.tipo || salvo("tipo_festa") || ch.args._tipo,
         convidados: ch.args.convidados || salvo("convidados"),
         salao: ch.args.salao,
         turno: ch.args.turno,
         pacote: ch.args.pacote,
+        observacao: ch.args.observacao,
         servico: ch.args.servico,
         hora: ch.args.hora,
         profissional: ch.args.profissional

@@ -59,6 +59,65 @@ export function datasCitadas(texto: string, agora: Date): string[] {
 }
 
 /**
+ * Período aberto citado na mensagem (10/11/2026: "15 anos, na semana que vem"
+ * — o bot pediu a data exata duas vezes). Vira uma consulta do período: o
+ * bot recebe os dias livres e oferece. Só entra quando não há data exata.
+ *   - "semana que vem" / "próxima semana" → segunda a domingo da semana seguinte
+ *   - "essa semana" → de amanhã até domingo
+ *   - "esse fim de semana" / "próximo fim de semana" → a sexta, o sábado e o domingo que vêm
+ *   - "fim de semana que vem" → sexta a domingo da semana seguinte
+ *   - "mês que vem" / "esse mês" / "em março (de 2027)" → o mês inteiro
+ */
+export function periodoCitado(
+  texto: string,
+  agora: Date
+): { de: string; ate: string } | { mes: string } | null {
+  const hoje = agora.toLocaleDateString("en-CA", { timeZone: FUSO });
+  const [anoHoje, mesHoje, diaHoje] = hoje.split("-").map(Number);
+  const base = new Date(Date.UTC(anoHoje, mesHoje - 1, diaHoje));
+  const dow = base.getUTCDay(); // 0 domingo … 6 sábado
+  const somar = (dias: number) => {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() + dias);
+    return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+  };
+  const t = semAcento(texto);
+  const ateSegunda = (8 - dow) % 7 || 7; // dias até a próxima segunda
+  const ateSexta = (5 - dow + 7) % 7; // 0 = hoje é sexta
+
+  if (/\b(fim|final) de semana que vem\b|\bfds que vem\b/.test(t)) {
+    return { de: somar(ateSegunda + 4), ate: somar(ateSegunda + 6) };
+  }
+  if (/\b(esse|este|nesse|neste|proximo|no proximo|agora no) (fim|final) de semana\b|\bfds\b/.test(t)) {
+    // Sábado ou domingo hoje: o que sobra deste fim de semana conta como "esse".
+    if (dow === 6) return { de: somar(0), ate: somar(1) };
+    if (dow === 0) return { de: somar(0), ate: somar(0) };
+    return { de: somar(ateSexta), ate: somar(ateSexta + 2) };
+  }
+  if (/\b(semana que vem|proxima semana|semana seguinte)\b/.test(t)) {
+    return { de: somar(ateSegunda), ate: somar(ateSegunda + 6) };
+  }
+  if (/\b(essa|esta|nessa|nesta) semana\b/.test(t)) {
+    const ateDomingo = (7 - dow) % 7;
+    return ateDomingo ? { de: somar(1), ate: somar(ateDomingo) } : { de: somar(ateSegunda), ate: somar(ateSegunda + 6) };
+  }
+  if (/\b(mes que vem|proximo mes)\b/.test(t)) {
+    const m = mesHoje === 12 ? 1 : mesHoje + 1;
+    return { mes: `${pad(m)}/${mesHoje === 12 ? anoHoje + 1 : anoHoje}` };
+  }
+  if (/\b(esse|este|nesse|neste) mes\b/.test(t)) return { mes: `${pad(mesHoje)}/${anoHoje}` };
+  const nome = new RegExp(`(?<!\\p{L})(${MESES.join("|")})(?!\\p{L})(?:\\s+(?:de|do)\\s+(\\d{4}|ano que vem|proximo ano))?`, "u").exec(t);
+  if (nome) {
+    const m = MESES.indexOf(nome[1]) + 1;
+    let ano = m < mesHoje ? anoHoje + 1 : anoHoje;
+    if (nome[2]) ano = /^\d{4}$/.test(nome[2]) ? Number(nome[2]) : anoHoje + 1;
+    if (ano < anoHoje || ano > anoHoje + ANOS_A_FRENTE || (ano === anoHoje && m < mesHoje)) return null;
+    return { mes: `${pad(m)}/${ano}` };
+  }
+  return null;
+}
+
+/**
  * Tipo de festa dito na própria mensagem ("casamento dia 24/11"). Só é usado
  * quando o cadastro ainda não tem o tipo — o SALVAR desta mensagem só roda
  * depois da resposta.
@@ -75,11 +134,12 @@ export function tipoCitado(texto: string): string | undefined {
 export function consultasAutomaticas(nomes: string[], mensagem: string, agora: Date): ChamadaDeFerramenta[] {
   if (!nomes.includes("CONSULTAR_AGENDA")) return [];
   const tipo = tipoCitado(mensagem);
-  return datasCitadas(mensagem, agora).map(data => ({
-    nome: "CONSULTAR_AGENDA",
-    // `_tipo` é reserva: vale só quando o cadastro ainda não tem o tipo.
-    args: tipo ? { data, _tipo: tipo } : { data }
-  }));
+  // `_tipo` é reserva: vale só quando o cadastro ainda não tem o tipo.
+  const comTipo = (args: Record<string, string>) => (tipo ? { ...args, _tipo: tipo } : args);
+  const datas = datasCitadas(mensagem, agora);
+  if (datas.length) return datas.map(data => ({ nome: "CONSULTAR_AGENDA", args: comTipo({ data }) }));
+  const periodo = periodoCitado(mensagem, agora);
+  return periodo ? [{ nome: "CONSULTAR_AGENDA", args: comTipo(periodo) }] : [];
 }
 
 // Palavras inteiras com acento: `\b` do JS não entende "manhã".

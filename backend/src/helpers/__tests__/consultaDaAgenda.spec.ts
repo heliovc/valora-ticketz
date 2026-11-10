@@ -11,6 +11,7 @@ import {
   cobrancaDeConsulta,
   consultasAutomaticas,
   datasCitadas,
+  periodoCitado,
   tipoCitado
 } from "../../services/AiBotServices/consultaDaAgenda";
 
@@ -154,5 +155,43 @@ describe("generateBotReply com a agenda", () => {
     expect(f.executar).not.toHaveBeenCalled();
     expect(axios.post).toHaveBeenCalledTimes(1);
     expect(r).toEqual({ kind: "reply", text: "Temos estacionamento com 120 vagas." });
+  });
+});
+
+describe("período aberto (10/11/2026: \"15 anos, na semana que vem\")", () => {
+  // AGORA = terça, 10/11/2026.
+  it("semana que vem, essa semana e fins de semana", () => {
+    expect(periodoCitado("15 anos, na semana que vem", AGORA)).toEqual({ de: "16/11/2026", ate: "22/11/2026" });
+    expect(periodoCitado("pode ser na próxima semana?", AGORA)).toEqual({ de: "16/11/2026", ate: "22/11/2026" });
+    expect(periodoCitado("ainda essa semana", AGORA)).toEqual({ de: "11/11/2026", ate: "15/11/2026" });
+    expect(periodoCitado("tem algo pra esse fim de semana?", AGORA)).toEqual({ de: "13/11/2026", ate: "15/11/2026" });
+    expect(periodoCitado("no fim de semana que vem", AGORA)).toEqual({ de: "20/11/2026", ate: "22/11/2026" });
+    // sábado: "esse fim de semana" é o que sobra dele
+    expect(periodoCitado("esse fds", new Date("2026-11-14T15:00:00Z"))).toEqual({ de: "14/11/2026", ate: "15/11/2026" });
+    // segunda: a semana que vem começa na outra segunda
+    expect(periodoCitado("semana que vem", new Date("2026-11-16T15:00:00Z"))).toEqual({ de: "23/11/2026", ate: "29/11/2026" });
+  });
+
+  it("mês: que vem, esse, por nome (ano que vem se já passou) — e mês passado não conta", () => {
+    expect(periodoCitado("mês que vem", AGORA)).toEqual({ mes: "12/2026" });
+    expect(periodoCitado("ainda esse mês", AGORA)).toEqual({ mes: "11/2026" });
+    expect(periodoCitado("casamento em maio de 2027", AGORA)).toEqual({ mes: "05/2027" });
+    expect(periodoCitado("pensando em março", AGORA)).toEqual({ mes: "03/2027" });
+    expect(periodoCitado("dezembro do ano que vem", AGORA)).toEqual({ mes: "12/2027" });
+    expect(periodoCitado("casei em maio de 2020", AGORA)).toBeNull();
+    expect(periodoCitado("quanto custa para 100 pessoas?", AGORA)).toBeNull();
+  });
+
+  it("vira consulta automática do período, com o tipo dito junto; data exata vence o período", () => {
+    expect(consultasAutomaticas(NOMES, "15 anos, na semana que vem", AGORA)).toEqual([
+      { nome: "CONSULTAR_AGENDA", args: { de: "16/11/2026", ate: "22/11/2026", _tipo: "15_anos" } }
+    ]);
+    expect(consultasAutomaticas(NOMES, "casamento em maio de 2027", AGORA)).toEqual([
+      { nome: "CONSULTAR_AGENDA", args: { mes: "05/2027", _tipo: "casamento" } }
+    ]);
+    expect(consultasAutomaticas(NOMES, "dia 24/11 ou na semana que vem", AGORA)).toEqual([
+      { nome: "CONSULTAR_AGENDA", args: { data: "24/11/2026" } }
+    ]);
+    expect(consultasAutomaticas(["GERAR_PROPOSTA"], "semana que vem", AGORA)).toEqual([]);
   });
 });
