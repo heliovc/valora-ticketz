@@ -216,7 +216,15 @@ describe("cliente pediu a proposta (11/11/2026: \"Quero o sábado. Me manda a pr
 
   it("devolve ao modelo quando a proposta não saiu; nunca quando saiu ou não foi pedida", () => {
     const r = "Sábado, 21/11, está livre no Salão Jardim. Posso deixar pré-reservado por 48 horas?";
-    expect(cobrancaDeConsulta(TODAS, r, ["CONSULTAR_AGENDA"], FRASE)).toContain("GERAR_PROPOSTA");
+    expect(cobrancaDeConsulta(TODAS, r, ["CONSULTAR_AGENDA"], FRASE)).toMatchObject({
+      texto: expect.stringContaining("GERAR_PROPOSTA"),
+      soComFerramenta: true
+    });
+    // Caso Rafael (11/11/2026): pediu orçamento sem data — perguntar a data é o certo, não volta.
+    expect(pedeProposta("Rafael. Queria fazer um orcamento para casamento")).toBe(true);
+    expect(
+      cobrancaDeConsulta(TODAS, "Oi, Rafael! Vou te ajudar com o orçamento do casamento. Qual a data ou o mês?", [], "Rafael. Queria fazer um orcamento para casamento")
+    ).toBeNull();
     expect(cobrancaDeConsulta(TODAS, r, ["CONSULTAR_AGENDA", "GERAR_PROPOSTA"], FRASE)).toBeNull();
     expect(cobrancaDeConsulta(TODAS, "Aqui está: https://x.com/proposta/abc", ["CONSULTAR_AGENDA"], FRASE)).toBeNull();
     expect(cobrancaDeConsulta(TODAS, r, ["CONSULTAR_AGENDA"], "e o sábado?")).toBeNull();
@@ -254,5 +262,37 @@ describe("cliente pediu a proposta (11/11/2026: \"Quero o sábado. Me manda a pr
       { nome: "GERAR_PROPOSTA", args: { data: "21/11/2026", extras: "Banda ao vivo, Open bar premium", observacao: "fogos de artifício" } }
     ]);
     expect(r?.text).toContain("/proposta/abc123");
+  });
+});
+
+describe("devolução só com ferramenta (11/11/2026: \"Você tem razão, vou gerar a proposta…\")", () => {
+  const TODAS = ["CONSULTAR_AGENDA", "PRE_RESERVAR", "GERAR_PROPOSTA", "COBRAR_SINAL"];
+  it("o modelo responde ao aviso em texto: o cliente recebe a resposta de antes, sem duplicar o SALVAR", async () => {
+    (axios.post as jest.Mock).mockReset();
+    const executar = jest.fn().mockResolvedValue("CONSULTAR_AGENDA: 21/11/2026 (sábado)\n- Salão Jardim: LIVRE");
+    const f: FerramentasParaOBot = {
+      nomes: TODAS,
+      catalogo: "FERRAMENTAS",
+      executar,
+      automaticas: (m, agora) => consultasAutomaticas(TODAS, m, agora),
+      cobrarConsulta: (r, ex, m) => cobrancaDeConsulta(TODAS, r, ex, m)
+    };
+    const antes = 'Sábado, 21/11, está livre! Posso pré-reservar por 48 horas? E quantos convidados vocês esperam? [[SALVAR campo="data_festa" valor="21/11/2026"]]';
+    for (const t of [
+      '[[CONSULTAR_AGENDA data="21/11/2026"]]',
+      antes,
+      "Você tem razão, vou gerar a proposta, mas preciso antes do número de convidados."
+    ]) (axios.post as jest.Mock).mockResolvedValueOnce({ data: { choices: [{ message: { content: t } }] } });
+    const r = await generateBotReply({
+      persona: "Ana, da Villa Aurora",
+      history: [],
+      userMessage: "Quero o sábado, me manda a proposta",
+      agora: AGORA,
+      provedores: [{ provider: "openrouter" as const, model: "m", apiKey: "k" }],
+      ferramentas: f
+    });
+    expect(axios.post).toHaveBeenCalledTimes(3);
+    expect(r?.text).toBe(antes);
+    expect(r?.text).not.toContain("Você tem razão");
   });
 });

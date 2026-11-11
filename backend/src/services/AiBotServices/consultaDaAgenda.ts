@@ -1,4 +1,4 @@
-import type { ChamadaDeFerramenta } from "../../helpers/aiBot";
+import type { ChamadaDeFerramenta, CobrancaAoModelo } from "../../helpers/aiBot";
 
 /**
  * Agenda sem depender da memória do modelo.
@@ -186,9 +186,13 @@ export function pedeProposta(mensagem: string): boolean {
 }
 
 export const COBRANCA_DE_PROPOSTA =
-  "[SISTEMA] O cliente pediu a proposta nesta mensagem e ela NÃO foi gerada. Escreva SÓ o comando " +
+  "[SISTEMA] Aviso interno, não é mensagem do cliente: não responda a ele nem o comente. O cliente pediu a proposta " +
+  "e a sua resposta ofereceu a pré-reserva no lugar dela. Escreva SÓ o comando " +
   '[[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="…" extras="…" observacao="…"]] com a data e o pacote que ele escolheu ' +
   "e os itens extras que ele pediu (o que não está na lista vai em observacao). A pré-reserva você oferece depois, junto com o link.";
+
+/** Oferece a pré-reserva? É o que o bot fazia no lugar da proposta pedida. */
+const OFERECE_PRE_RESERVA = /pr[eé][\s-]?reserv/i;
 
 /** Texto que devolve a resposta ao modelo, ou `null` quando ela pode seguir. */
 export function cobrancaDeConsulta(
@@ -196,7 +200,7 @@ export function cobrancaDeConsulta(
   resposta: string,
   executadas: string[],
   mensagem = ""
-): string | null {
+): string | CobrancaAoModelo | null {
   if (
     nomes.includes("CONSULTAR_AGENDA") &&
     !executadas.some(n => FERRAMENTAS_DE_AGENDA.includes(n)) &&
@@ -208,9 +212,12 @@ export function cobrancaDeConsulta(
     nomes.includes("GERAR_PROPOSTA") &&
     !executadas.includes("GERAR_PROPOSTA") &&
     !/\/proposta\//.test(resposta) &&
+    // Só no caso real: trocou a proposta pela pré-reserva. Pedir um dado que falta
+    // ("qual a data?") é a resposta certa e não volta ao modelo.
+    OFERECE_PRE_RESERVA.test(resposta) &&
     pedeProposta(mensagem)
   ) {
-    return COBRANCA_DE_PROPOSTA;
+    return { texto: COBRANCA_DE_PROPOSTA, soComFerramenta: true };
   }
   return null;
 }

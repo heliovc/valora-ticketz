@@ -111,8 +111,15 @@ export type FerramentasParaOBot = {
    * Confere a resposta antes de ir ao cliente: devolve o texto que a manda de
    * volta ao modelo (ex.: afirmou "livre" sem consultar), ou `null`.
    */
-  cobrarConsulta?: (resposta: string, executadas: string[], mensagem?: string) => string | null;
+  cobrarConsulta?: (resposta: string, executadas: string[], mensagem?: string) => string | CobrancaAoModelo | null;
 };
+
+/**
+ * Devolução ao modelo que só serve se ele usar uma ferramenta. Se ele responder
+ * em texto, vale a resposta de ANTES — o modelo lia o aviso do sistema como fala
+ * do cliente e escrevia "Você tem razão, vou gerar a proposta…" (demo, 11/11/2026).
+ */
+export type CobrancaAoModelo = { texto: string; soComFerramenta: true };
 
 /** O comando como o modelo escreveria — args com `_` são internos e ficam de fora. */
 function comandoDe(ch: ChamadaDeFerramenta): string {
@@ -715,22 +722,35 @@ export const generateBotReply = async (
       const comandosPendentes: string[] = [];
       const executadas = [...executadasAntes];
       let cobrou = false;
+      let anterior: { texto: string; pendentes: number } | null = null;
       let rodadas = 0;
       while (params.ferramentas && rodadas < MAX_RODADAS_DE_FERRAMENTAS) {
         const chamadas = extrairChamadas(text, params.ferramentas.nomes);
         if (!chamadas.length) {
           // Afirmou disponibilidade sem consultar, ou o cliente pediu a proposta e ela
           // não saiu: volta ao modelo UMA vez, antes de o cliente receber.
-          const cobranca = cobrou ? null : params.ferramentas.cobrarConsulta?.(text, executadas, params.userMessage) ?? null;
-          if (!cobranca) break;
+          const devolucao = cobrou ? null : params.ferramentas.cobrarConsulta?.(text, executadas, params.userMessage) ?? null;
+          if (!devolucao) {
+            // Devolvida só para usar a ferramenta, e o modelo respondeu em texto: vale a de antes.
+            if (anterior) {
+              text = anterior.texto;
+              comandosPendentes.splice(anterior.pendentes);
+              logger.warn("[aiBot] devolução ao modelo sem ferramenta; mantida a resposta anterior");
+            }
+            break;
+          }
+          const cobranca = typeof devolucao === "string" ? devolucao : devolucao.texto;
           cobrou = true;
           logger.warn(`[aiBot] resposta devolvida ao modelo (${cobranca.slice(9, 60)}…): ${text.slice(0, 120)}`);
+          const pendentes = comandosPendentes.length;
           // O texto descartado pode trazer SALVAR/MOVER válidos (ex.: a data que o cliente disse).
           comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR|ENVIAR_MIDIA)\b[^\]]*\]\]/gi) || []));
+          if (typeof devolucao !== "string") anterior = { texto: text, pendentes };
           turns = [...turns, { role: "assistant", text }, { role: "user", text: cobranca }];
           text = await chamarProvedor(provedor, systemText, turns, medidor);
           continue;
         }
+        anterior = null;
         rodadas += 1;
         executadas.push(...chamadas.map(c => c.nome));
         // SALVAR/MOVER escritos junto com a ferramenta não podem se perder: a
