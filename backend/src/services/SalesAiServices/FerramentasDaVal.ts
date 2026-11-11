@@ -8,7 +8,6 @@ import { logger } from "../../utils/logger";
 import { NOME_DO_BOT_DE_VENDAS, ProdutoDeVendas, produtoDaConversa } from "./salesAiRules";
 import { notificarValoraPorEmail } from "../TagServices/notificarValora";
 import { avisarNoProprioWhatsapp } from "../WbotServices/AvisoNoProprioWhatsapp";
-import { moverParaAgendamento } from "./IndicacaoDaVal";
 
 /**
  * Ferramentas da Val (Val Vendas e Val Saúde): consultar e marcar a
@@ -92,6 +91,9 @@ export async function concluirDemoMarcada(
       logger.error({ ticketId: ticket.id, err: err?.message }, "[val-agenda] envio do link do Meet falhou");
     }
   }
+  // Import na hora: estático, ele muda a ordem de carga dos módulos do motor
+  // (o i18n consultava o banco antes de o Sequelize subir, nos testes).
+  const { moverParaAgendamento } = await import("./IndicacaoDaVal");
   await moverParaAgendamento(ticket, cfg);
   try {
     await ligarVal(ticket);
