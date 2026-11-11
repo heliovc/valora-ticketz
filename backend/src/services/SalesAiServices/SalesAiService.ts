@@ -23,14 +23,19 @@ import {
   DecisaoDaIa,
   HorarioDeFuncionamento,
   NOME_DO_BOT_DE_VENDAS,
+  ETIQUETA_DO_PRODUTO,
+  PRODUTOS_DE_VENDAS,
   PROTOCOLO_DA_INDICACAO,
   ProdutoDeVendas,
+  TRIAGEM,
   ViaDeOrigem,
   codigoNasPrimeiras,
   dentroDoHorario,
   extrairMarcadoresDeVendas,
   normalizarTelefone,
+  ehProdutoDeVendas,
   produtoDaConversa,
+  promptDaTriagem,
   regrasCompletas,
   removerCodigo,
   shouldAiReply,
@@ -100,6 +105,12 @@ async function playbookAtiva(companyId: number, produto: ProdutoDeVendas): Promi
   return SalesPlaybookVersion.findOne({ where: { companyId, produto, active: true }, order: [["version", "DESC"]] });
 }
 
+/** Produtos que a triagem pode oferecer: só os que têm playbook ativa. */
+export async function produtosComPlaybook(companyId: number): Promise<ProdutoDeVendas[]> {
+  const ativas = await Promise.all(PRODUTOS_DE_VENDAS.map(p => playbookAtiva(companyId, p)));
+  return PRODUTOS_DE_VENDAS.filter((_, i) => !!ativas[i]?.content?.trim());
+}
+
 /**
  * Persona da conversa: a playbook ativa do produto + o protocolo de marcadores
  * + a regra da indicação. Com `contactId`, quem foi indicado por outro lead
@@ -110,6 +121,8 @@ export async function promptDeVendas(
   salesSource: string | null | undefined,
   contactId?: number | null
 ): Promise<string> {
+  // Triagem: sem playbook e sem regra da indicação (o card novo precisa de produto).
+  if (salesSource === TRIAGEM) return promptDaTriagem(await produtosComPlaybook(cfg.companyId), cfg.protocol || "");
   const pb = await playbookAtiva(cfg.companyId, produtoDaConversa(salesSource));
   const contexto = await contextoDaIndicacao(contactId).catch(() => "");
   return [pb?.content?.trim() || "", (cfg.protocol || "").trim(), PROTOCOLO_DA_INDICACAO, contexto]
@@ -141,7 +154,9 @@ async function marcarOrigem(
  * texto guardado (o original fica em `bodyOriginal`).
  */
 export async function atribuirOrigem(ticket: Ticket, contact: Contact, cfg: SalesAiConfig): Promise<void> {
-  if (ticket.salesSource) {
+  // Triagem (ligada pela Entrada, que roda antes) não é origem: código, anúncio
+  // ou conversa anterior ainda dizem o produto e valem mais que perguntar.
+  if (ticket.salesSource && ticket.salesSource !== TRIAGEM) {
     await limparCodigoDasMensagens(ticket, cfg);
     return;
   }
@@ -238,9 +253,11 @@ export async function decidir(
   cfg: SalesAiConfig,
   ctx: ContextoDaMensagem = {}
 ): Promise<DecisaoDaIa> {
-  const [contagem, pb, loop, daEmpresa] = await Promise.all([
+  const [contagem, temPlaybook, loop, daEmpresa] = await Promise.all([
     contarIa(ticket.id, ticket.companyId),
-    playbookAtiva(ticket.companyId, produtoDaConversa(ticket.salesSource)),
+    ticket.salesSource === TRIAGEM
+      ? produtosComPlaybook(ticket.companyId).then(l => l.length > 0)
+      : playbookAtiva(ticket.companyId, produtoDaConversa(ticket.salesSource)).then(pb => !!pb?.content?.trim()),
     motivoDoLoopNaConversa(ticket.id, ticket.salesStage),
     ehNumeroDaEmpresa(ticket.companyId, contact.number)
   ]);
@@ -248,7 +265,7 @@ export async function decidir(
     chaveDoAmbiente: chaveDoAmbiente(),
     chaveDoPainel: !!cfg.enabled,
     regras: regrasCompletas(cfg.rules),
-    temPlaybook: !!pb?.content?.trim(),
+    temPlaybook,
     conversa: {
       salesSource: ticket.salesSource,
       salesSourceVia: ticket.salesSourceVia,
@@ -557,6 +574,71 @@ export async function ligarValNaConversa(
   } as any).catch(() => undefined);
   logger.info(`[val-vendas] ticket ${ticket.id}: ${ligado ? "ligada" : "desligada"} (${porQuem})`);
   return true;
+}
+
+/**
+ * Liga a Val numa conversa nova SEM produto (automação da Entrada): ela
+ * pergunta o que a pessoa procura antes de seguir uma playbook. Conversa que já
+ * tem produto segue com ele. Fora de um número da Val Vendas devolve false.
+ */
+export async function ligarTriagemNaConversa(ticket: Ticket, campanha?: string): Promise<boolean> {
+  if (ehProdutoDeVendas(ticket.salesSource)) {
+    return ligarValNaConversa(ticket, true, "funil", ticket.salesSource, campanha);
+  }
+  if (!(await escopoDeVendas(ticket))) return false;
+  await ticket.update({
+    aiPausedUntil: null,
+    salesSource: TRIAGEM,
+    salesSourceVia: "manual",
+    campaignRef: (campanha || "ENTRADA").slice(0, 48),
+    attributedAt: new Date(),
+    salesStage: "novo",
+    salesSummary: null
+  } as any);
+  await AiDecisionLog.create({
+    companyId: ticket.companyId,
+    ticketId: ticket.id,
+    contactId: ticket.contactId,
+    whatsappId: ticket.whatsappId,
+    reply: false,
+    reason: "val_ligada",
+    details: { porQuem: "funil", produto: TRIAGEM }
+  } as any).catch(() => undefined);
+  logger.info(`[val-vendas] ticket ${ticket.id}: ligada em triagem`);
+  return true;
+}
+
+/**
+ * A triagem descobriu o produto: a conversa passa a seguir a playbook dele e o
+ * card ganha a etiqueta do produto (fica onde está; lista não muda).
+ */
+export async function definirProdutoDaTriagem(ticket: Ticket, produto: ProdutoDeVendas): Promise<void> {
+  await ticket.update({ salesSource: produto, attributedAt: new Date() } as any);
+  await AiDecisionLog.create({
+    companyId: ticket.companyId,
+    ticketId: ticket.id,
+    contactId: ticket.contactId,
+    whatsappId: ticket.whatsappId,
+    reply: false,
+    reason: "triagem_produto",
+    details: { produto }
+  } as any).catch(() => undefined);
+  logger.info(`[val-vendas] ticket ${ticket.id}: triagem → ${produto}`);
+  try {
+    const { nome, cor } = ETIQUETA_DO_PRODUTO[produto];
+    const [etiqueta] = await Tag.findOrCreate({
+      where: { companyId: ticket.companyId, name: nome },
+      defaults: { companyId: ticket.companyId, name: nome, color: cor, kanban: 0 } as any
+    });
+    // Nome igual a uma LISTA do funil: não move o card por aqui.
+    if (Number((etiqueta as any).kanban) === 1) return;
+    await TicketTag.findOrCreate({
+      where: { ticketId: ticket.id, tagId: etiqueta.id },
+      defaults: { ticketId: ticket.id, tagId: etiqueta.id } as any
+    });
+  } catch (err: any) {
+    logger.warn(`[val-vendas] etiqueta do produto falhou ticket=${ticket.id}: ${err?.message}`);
+  }
 }
 
 export async function aplicarComandoVal(ticket: Ticket, comando: ComandoVal, porQuem: string): Promise<string> {

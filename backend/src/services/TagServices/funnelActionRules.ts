@@ -352,15 +352,22 @@ export function botDeveResponder(
   return daConversa !== false;
 }
 
-/** Qual bot uma ação "ligar/desligar o bot" controla. */
-export type BotDoFunil = "atendimento" | "val_vendas" | "val_saude";
+/**
+ * Qual bot uma ação "ligar/desligar o bot" controla. `val_triagem` (11/11/2026)
+ * é a Val numa conversa sem produto: ela descobre o que a pessoa procura e
+ * segue com a Val Vendas ou a Val Saúde.
+ */
+export type BotDoFunil = "atendimento" | "val_vendas" | "val_saude" | "val_triagem";
+
+/** Bots que só existem na empresa com a Val Vendas configurada. */
+export const BOTS_DA_VAL: BotDoFunil[] = ["val_vendas", "val_saude", "val_triagem"];
 
 /**
  * Ações gravadas antes da escolha (28/10/2026) não têm `config.bot`: elas
  * sempre mexeram no bot de atendimento, e continuam mexendo.
  */
 export function botDaAcao(config: Record<string, unknown> | null | undefined): BotDoFunil {
-  return config?.bot === "val_vendas" || config?.bot === "val_saude" ? config.bot : "atendimento";
+  return BOTS_DA_VAL.includes(config?.bot as BotDoFunil) ? (config!.bot as BotDoFunil) : "atendimento";
 }
 
 /** Produto que o bot vende. Nulo = bot de atendimento, que não vende produto nenhum. */

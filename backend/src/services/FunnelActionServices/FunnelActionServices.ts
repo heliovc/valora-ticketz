@@ -4,7 +4,7 @@ import FunnelAction from "../../models/FunnelAction";
 import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
 import { SalesAiConfig } from "../../models/SalesAi";
-import { TIPOS_CONHECIDOS } from "../TagServices/funnelActionRules";
+import { BOTS_DA_VAL, BotDoFunil, TIPOS_CONHECIDOS } from "../TagServices/funnelActionRules";
 
 /** Teto por lista. Automação é o que queima número de WhatsApp; 10 já é muito. */
 const MAX_ACOES_POR_LISTA = 10;
@@ -127,7 +127,7 @@ export async function listarTodasAsAcoes(companyId: number): Promise<
 
 /** A Val Vendas só existe nas empresas que têm a configuração dela. */
 async function assertBotDaEmpresa(dados: DadosDaAcao, companyId: number): Promise<void> {
-  if (dados.config?.bot !== "val_vendas" && dados.config?.bot !== "val_saude") return;
+  if (!BOTS_DA_VAL.includes(dados.config?.bot as BotDoFunil)) return;
   if (!(await SalesAiConfig.findOne({ where: { companyId } }))) {
     throw new AppError("Esta conta não tem a Val Vendas.", 400);
   }
@@ -162,7 +162,7 @@ function validar(dados: DadosDaAcao): void {
   if (
     (dados.tipo === "bot_ligar" || dados.tipo === "bot_desligar") &&
     dados.config?.bot !== undefined &&
-    !["atendimento", "val_vendas", "val_saude"].includes(String(dados.config.bot))
+    !["atendimento", ...BOTS_DA_VAL].includes(String(dados.config.bot) as BotDoFunil)
   ) {
     throw new AppError("Escolha qual bot a automação controla.", 400);
   }

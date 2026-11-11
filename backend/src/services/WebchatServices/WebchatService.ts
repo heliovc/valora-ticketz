@@ -10,9 +10,9 @@ import CreateOrUpdateContactService from "../ContactServices/CreateOrUpdateConta
 import {
   aplicarResposta,
   avaliarMensagemRecebida,
-  escopoDeVendas,
-  promptDeVendas
+  escopoDeVendas
 } from "../SalesAiServices/SalesAiService";
+import { responderComTriagem } from "../SalesAiServices/TriagemDaVal";
 import { origemDoUso } from "../SalesAiServices/salesAiRules";
 import FindOrCreateTicketServiceMeta from "../TicketServices/FindOrCreateTicketServiceMeta";
 import CreateMessageService from "../MessageServices/CreateMessageService";
@@ -237,16 +237,21 @@ export async function handleVisitorMessage(
     if (decisaoDeVendas.reply) {
       try {
         const cfg = await escopoDeVendas(ticket);
+        // Sem ferramentas no chat do site (como antes); triagem igual aos outros canais.
         const reply = cfg
-          ? await generateBotReply({
-              persona: await promptDeVendas(cfg, ticket.salesSource, contact.id),
-              knowledge: "",
-              history,
-              userMessage: body,
-              files: [],
-              provedores: await provedoresDaEmpresa(companyId),
-              uso: { companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "webchat" }
-            })
+          ? (
+              await responderComTriagem(ticket, cfg, contact.id, async persona =>
+                generateBotReply({
+                  persona,
+                  knowledge: "",
+                  history,
+                  userMessage: body,
+                  files: [],
+                  provedores: await provedoresDaEmpresa(companyId),
+                  uso: { companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "webchat" }
+                })
+              )
+            ).resposta
           : null;
         const corpo = reply && cfg
           ? await aplicarResposta(ticket, contact, cfg, reply.text, { handoff: reply.kind === "handoff", falha: !!reply.falha })

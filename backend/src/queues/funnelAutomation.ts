@@ -24,6 +24,7 @@ import formatBody from "../helpers/Mustache";
 import { checkOpenHours } from "../helpers/checkOpenHours";
 import { logger } from "../utils/logger";
 import {
+  ligarTriagemNaConversa,
   ligarValNaConversa,
   registrarEnvioDeCampanha
 } from "../services/SalesAiServices/SalesAiService";
@@ -218,6 +219,14 @@ async function aplicarBot(
   bot: BotDoFunil,
   lista?: string
 ): Promise<boolean> {
+  // Val em triagem: liga sem produto; desligar é desligar a Val na conversa.
+  if (bot === "val_triagem") {
+    const aplicou = ligado
+      ? await ligarTriagemNaConversa(ticket, lista)
+      : await ligarValNaConversa(ticket, false, "funil");
+    if (!aplicou) logger.info(`[funnel] val_triagem não se aplica ticket=${ticket.id}: número fora da Val Vendas`);
+    return !!aplicou;
+  }
   const produto = produtoDoBot(bot);
   if (produto) {
     const aplicou = await ligarValNaConversa(ticket, ligado, "funil", produto, lista);

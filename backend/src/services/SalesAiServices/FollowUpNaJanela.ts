@@ -15,7 +15,7 @@ import { CHANNEL } from "../CloudApiServices/CloudApiChannel";
 import { dentroDaJanela, sendText } from "../CloudApiServices/CloudApiSendService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { decidir, escopoDeVendas, promptDeVendas } from "./SalesAiService";
-import { extrairMarcadoresDeVendas } from "./salesAiRules";
+import { TRIAGEM, extrairMarcadoresDeVendas } from "./salesAiRules";
 
 /**
  * Follow-ups da Val no WhatsApp Oficial, dentro da janela de 24h (pedido do
@@ -146,7 +146,8 @@ export async function varrerFollowUps(agora: Date = new Date()): Promise<number>
     where: {
       channel: CHANNEL,
       status: { [Op.in]: ["open", "pending"] },
-      salesSource: { [Op.ne]: null },
+      // Triagem fica fora: sem produto, não há playbook para o follow-up.
+      salesSource: { [Op.ne]: null, [Op.notIn]: [TRIAGEM] },
       userId: null,
       lastInboundAt: {
         [Op.between]: [new Date(agora.getTime() - JANELA_MS), new Date(agora.getTime() - ESPERA_FOLLOW_UP_1_MS)]

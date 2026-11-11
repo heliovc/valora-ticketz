@@ -49,12 +49,12 @@ import {
   decidir as decidirVendas,
   escopoDeVendas,
   ligarValNaConversa,
-  promptDeVendas,
   tentarDepoisDoLimite
 } from "../SalesAiServices/SalesAiService";
 import { extrairMarcadoresDeVendas, origemDoUso } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
-import { concluirDemoMarcada, ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
+import { concluirDemoMarcada } from "../SalesAiServices/FerramentasDaVal";
+import { responderComTriagem } from "../SalesAiServices/TriagemDaVal";
 import { marcarEntregaRecusada } from "../TagServices/entregaRecusada";
 import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
@@ -380,19 +380,22 @@ async function responderDeVendas(
   }
   const { history, pendente } = separarTurnoAtual(await mensagensRecentes(ticket.id));
   if (!pendente) return;
-  const ferramentas = await ferramentasDaVal(ticket, cfg);
-  const resposta = await generateBotReply({
-    persona: await promptDeVendas(cfg, ticket.salesSource, atual.id),
-    knowledge: "",
-    history,
-    userMessage: pendente,
-    contactName: atual.name,
-    files: [],
-    provedores: await provedoresDaEmpresa(whatsapp.companyId),
-    uso: { companyId: whatsapp.companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "oficial" },
-    // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
-    ferramentas: ferramentas ?? undefined
-  });
+  const provedores = await provedoresDaEmpresa(whatsapp.companyId);
+  // Triagem (11/11/2026): conversa da Entrada sem produto descobre o produto antes.
+  const { resposta, ferramentas } = await responderComTriagem(ticket, cfg, atual.id, async (persona, ferr) =>
+    generateBotReply({
+      persona,
+      knowledge: "",
+      history,
+      userMessage: pendente,
+      contactName: atual.name,
+      files: [],
+      provedores,
+      uso: { companyId: whatsapp.companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "oficial" },
+      // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
+      ferramentas: ferr ?? undefined
+    })
+  );
   if (!resposta) return;
   const texto = await aplicarResposta(ticket, atual, cfg, resposta.text, {
     handoff: resposta.kind === "handoff",

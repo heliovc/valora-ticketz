@@ -299,6 +299,11 @@ describe("qual bot a ação controla", () => {
   it("valor desconhecido não vira Val Vendas por engano", () => {
     expect(botDaAcao({ bot: "outro" })).toBe("atendimento");
   });
+
+  it("Val em triagem (Entrada, 11/11/2026): bot próprio, sem produto fixo", () => {
+    expect(botDaAcao({ bot: "val_triagem" })).toBe("val_triagem");
+    expect(produtoDoBot("val_triagem")).toBeNull();
+  });
 });
 
 describe("quem responde em cada número", () => {

@@ -16,7 +16,12 @@ import {
   shouldAiReply,
   videoDoProduto,
   tabelaDoProduto,
-  mesclarAjustesDeProdutos
+  mesclarAjustesDeProdutos,
+  TRIAGEM,
+  promptDaTriagem,
+  produtoDaTriagem,
+  ETIQUETA_DO_PRODUTO,
+  DESCRICAO_PARA_TRIAGEM
 } from "../salesAiRules";
 
 describe("parser de código ELO-*", () => {
@@ -351,5 +356,55 @@ describe("outro número do próprio lead (11/11/2026, caso Baladinha)", () => {
   it("a regra vai junto da playbook", () => {
     expect(PROTOCOLO_DA_INDICACAO).toContain("[[OUTRO_NUMERO");
     expect(PROTOCOLO_DA_INDICACAO).toContain("NÃO transfira");
+  });
+});
+
+describe("triagem da Entrada (11/11/2026)", () => {
+  const triagem = { salesSource: TRIAGEM, salesSourceVia: "manual", salesStage: "novo", aiPausedUntil: null, temAtendente: false };
+
+  it("conversa em triagem responde mesmo exigindo origem", () => {
+    expect(shouldAiReply(entrada({ conversa: triagem }))).toEqual({ reply: true, reason: "ok" });
+  });
+  it("triagem respeita as outras travas (pessoal, atendente, transferida)", () => {
+    expect(shouldAiReply(entrada({ conversa: triagem, contato: { isPersonal: true } })).reason).toBe("contato_pessoal");
+    expect(shouldAiReply(entrada({ conversa: { ...triagem, temAtendente: true } })).reason).toBe("atendente_assumiu");
+    expect(shouldAiReply(entrada({ conversa: { ...triagem, salesStage: "transferido" } })).reason).toBe("conversa_transferida");
+  });
+  it("triagem não é produto: sem playbook própria, sem vídeo e sem tabela", () => {
+    expect(produtoDaConversa(TRIAGEM)).toBe("elo_eventos");
+  });
+
+  it("persona lista só os produtos oferecidos, com o marcador de cada um", () => {
+    const so = promptDaTriagem(["valora_saude"]);
+    expect(so).toContain("valora_saude");
+    expect(so).toContain("[[PRODUTO valora_saude]]");
+    expect(so).not.toContain("Elo Eventos");
+    const os2 = promptDaTriagem(["elo_eventos", "valora_saude"], "Protocolo do sistema");
+    expect(os2).toContain("[[PRODUTO elo_eventos]] ou [[PRODUTO valora_saude]]");
+    expect(os2).toContain("[[TRANSFERIR]]");
+    expect(os2).toContain("Protocolo do sistema");
+  });
+
+  it("lê o produto do marcador, tolerante a forma", () => {
+    const ambos = ["elo_eventos", "valora_saude"] as const;
+    expect(produtoDaTriagem("[[PRODUTO elo_eventos]]", [...ambos])).toBe("elo_eventos");
+    expect(produtoDaTriagem("[[PRODUTO=valora_saude]] [[RESUMO=clínica]]", [...ambos])).toBe("valora_saude");
+    expect(produtoDaTriagem('[[ produto: "Saúde" ]]', [...ambos])).toBe("valora_saude");
+    expect(produtoDaTriagem("[[PRODUTO Eventos]]", [...ambos])).toBe("elo_eventos");
+  });
+  it("sem marcador, produto desconhecido ou não oferecido → null", () => {
+    expect(produtoDaTriagem("Oi! Aqui é a Val, da Valora. O que você procura?", ["elo_eventos", "valora_saude"])).toBeNull();
+    expect(produtoDaTriagem("[[PRODUTO valora_pay]]", ["elo_eventos", "valora_saude"])).toBeNull();
+    expect(produtoDaTriagem("[[PRODUTO valora_saude]]", ["elo_eventos"])).toBeNull();
+  });
+  it("o marcador nunca vai para o lead", () => {
+    const r = extrairMarcadoresDeVendas("Perfeito! Me conta da clínica. [[PRODUTO valora_saude]] [[RESUMO=clínica]]");
+    expect(r.texto).toBe("Perfeito! Me conta da clínica.");
+  });
+  it("cada produto tem etiqueta e descrição", () => {
+    for (const p of ["elo_eventos", "valora_saude"] as const) {
+      expect(ETIQUETA_DO_PRODUTO[p].nome).toBeTruthy();
+      expect(DESCRICAO_PARA_TRIAGEM[p]).toBeTruthy();
+    }
   });
 });

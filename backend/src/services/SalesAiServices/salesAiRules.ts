@@ -38,6 +38,62 @@ export function ehProdutoDeVendas(valor: unknown): valor is ProdutoDeVendas {
   return (PRODUTOS_DE_VENDAS as readonly unknown[]).includes(valor);
 }
 
+// ── Triagem: conversa nova sem produto (11/11/2026) ─────────────────────────
+
+/**
+ * `Tickets.salesSource` de quem entrou pela Entrada do funil e ainda não disse
+ * o que procura. Não é produto: a Val primeiro descobre qual é, e só então
+ * segue a playbook dele (pedido do Hélio, 11/11/2026).
+ */
+export const TRIAGEM = "triagem";
+
+/** Como a Val apresenta cada produto na pergunta da triagem (curto, sem preço). */
+export const DESCRICAO_PARA_TRIAGEM: Record<ProdutoDeVendas, string> = {
+  elo_eventos:
+    "Valora Elo Eventos — para casas de festas, buffets e espaços de eventos: uma IA atende o WhatsApp em segundos, consulta a agenda, manda a proposta com os pacotes e cobra o sinal por Pix.",
+  valora_saude:
+    "Valora Saúde — para clínicas e médicos: o paciente paga por um link único, em até 21x no cartão, e o valor já cai dividido entre cirurgião, anestesista, instrumentador e clínica."
+};
+
+/** Etiqueta que o card ganha quando a triagem descobre o produto (o card fica na Entrada). */
+export const ETIQUETA_DO_PRODUTO: Record<ProdutoDeVendas, { nome: string; cor: string }> = {
+  elo_eventos: { nome: "Eventos", cor: "#22c55e" },
+  valora_saude: { nome: "Valora Saude", cor: "#0E9F6E" }
+};
+
+/** Persona da triagem: só descobrir o produto, entre os que têm playbook ativa. */
+export function promptDaTriagem(produtos: ProdutoDeVendas[], protocolo = ""): string {
+  const lista = produtos.map(p => `- ${p}: ${DESCRICAO_PARA_TRIAGEM[p]}`).join("\n");
+  const marcadores = produtos.map(p => `[[PRODUTO ${p}]]`).join(" ou ");
+  return [
+    "Você é a Val, da Valora. Esta conversa chegou pelo WhatsApp e ainda não sabemos qual solução a pessoa procura.",
+    "",
+    "Soluções que você atende por aqui:",
+    lista,
+    "",
+    "Seu único objetivo agora é descobrir qual dessas soluções interessa à pessoa:",
+    `1. Se a conversa já deixa claro (pelo assunto, pelo tipo de negócio dela ou por citar o produto), responda SOMENTE com ${marcadores}, sem nenhum outro texto. A resposta ao cliente sai depois, com o roteiro do produto.`,
+    "2. Se ainda não está claro, cumprimente em uma frase curta, apresente-se como Val, da Valora, e pergunte qual é o negócio dela ou o que procura, citando as soluções acima em poucas palavras. Uma pergunta só. Não detalhe os produtos e não fale de preço.",
+    "3. Se a pessoa procura outra coisa (maquininha de cartão, Valora Pay, pagamentos ou repasses de empresa, loja ou vitrine digital, suporte de quem já é cliente, fornecedor, currículo ou qualquer assunto fora das soluções acima), agradeça em uma frase, diga que vai passar para a equipe da Valora e escreva [[TRANSFERIR]].",
+    "Nunca invente produto, preço ou prazo.",
+    protocolo.trim()
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** `[[PRODUTO elo_eventos]]` na resposta da triagem. Só vale produto oferecido. */
+export function produtoDaTriagem(texto: string, oferecidos: ProdutoDeVendas[]): ProdutoDeVendas | null {
+  const m = /\[\[\s*PRODUTO\b\s*[=:]?\s*([^\]]*)\]\]/i.exec(String(texto || ""));
+  if (!m) return null;
+  const valor = m[1]
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+  const produto: ProdutoDeVendas | null = /saude/.test(valor) ? "valora_saude" : /evento/.test(valor) ? "elo_eventos" : null;
+  return produto && oferecidos.includes(produto) ? produto : null;
+}
+
 /** Na tela de consumo das IAs: qual Val gastou. */
 export function origemDoUso(salesSource: string | null | undefined): "val_saude" | "val_vendas" {
   return produtoDaConversa(salesSource) === "valora_saude" ? "val_saude" : "val_vendas";
@@ -320,7 +376,10 @@ export function shouldAiReply(e: EntradaDaDecisao): DecisaoDaIa {
   }
   if (r.bloquearPessoais && e.contato.isPersonal) return { reply: false, reason: "contato_pessoal" };
   if (r.exigirOrigem) {
-    if (!ehProdutoDeVendas(e.conversa.salesSource)) return { reply: false, reason: "sem_origem_elo_eventos" };
+    // Triagem conta como origem: quem ligou foi a automação da Entrada.
+    if (!ehProdutoDeVendas(e.conversa.salesSource) && e.conversa.salesSource !== TRIAGEM) {
+      return { reply: false, reason: "sem_origem_elo_eventos" };
+    }
     const regraDaVia = VIA_PARA_REGRA[e.conversa.salesSourceVia || ""];
     if (regraDaVia && !r[regraDaVia]) return { reply: false, reason: `origem_desligada_${e.conversa.salesSourceVia}` };
   }
@@ -465,6 +524,8 @@ export function extrairMarcadoresDeVendas(texto: string): {
     })
     // Comando de ferramenta repetido na resposta final nunca vai para o lead.
     .replace(/\[\[\s*(?:CONSULTAR_DEMO|MARCAR_DEMO)\b[^\]]*\]\]/gi, "")
+    // Marcador da triagem nunca vai para o lead.
+    .replace(/\[\[\s*PRODUTO\b[^\]]*\]\]/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   const etapaPedida: EtapaDeVendas | null = etapa;
