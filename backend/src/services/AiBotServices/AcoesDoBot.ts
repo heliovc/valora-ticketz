@@ -285,14 +285,23 @@ async function mover(ticket: Ticket, nomeDaLista: string): Promise<string> {
  * Leva o card para a lista `tagId` do quadro dele. É a ação "Mover para a
  * lista" dos Gatilhos — a mesma troca que o MOVER da IA faz.
  */
-export async function moverParaLista(ticket: Ticket, tagId: number): Promise<string> {
+export async function moverParaLista(
+  ticket: Ticket,
+  tagId: number,
+  opcoes: { manterBot?: boolean } = {}
+): Promise<string> {
   const listas = await listasDoQuadro(ticket);
   const destino = listas.find(l => l.id === tagId);
   if (!destino) return `a lista ${tagId} não é deste quadro`;
-  return trocarDeLista(ticket, destino, listas);
+  return trocarDeLista(ticket, destino, listas, opcoes);
 }
 
-async function trocarDeLista(ticket: Ticket, destino: Tag, listas: Tag[]): Promise<string> {
+async function trocarDeLista(
+  ticket: Ticket,
+  destino: Tag,
+  listas: Tag[],
+  opcoes: { manterBot?: boolean } = {}
+): Promise<string> {
   const marcas = await TicketTag.findAll({
     where: { ticketId: ticket.id, tagId: { [Op.in]: listas.map(l => l.id) } }
   });
@@ -300,7 +309,7 @@ async function trocarDeLista(ticket: Ticket, destino: Tag, listas: Tag[]): Promi
   if (ticket.status === "pending") await ticket.update({ status: "open" });
   for (const m of marcas) {
     // eslint-disable-next-line no-await-in-loop
-    await ticketTagRemove(ticket.id, m.tagId, ticket.companyId);
+    await ticketTagRemove(ticket.id, m.tagId, ticket.companyId, opcoes);
   }
   // Pela porta de sempre: as automações da lista de destino disparam.
   await ticketTagAdd(ticket.id, destino.id, ticket.companyId);

@@ -39,13 +39,14 @@ import {
   avaliarMensagemRecebida,
   decidir as decidirVendas,
   escopoDeVendas,
+  ligarValNaConversa,
   pausarPorHumano,
   promptDeVendas,
   tentarDepoisDoLimite
 } from "../SalesAiServices/SalesAiService";
 import { DecisaoDaIa, extrairMarcadoresDeVendas, lerComandoVal, origemDoUso } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
-import { ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
+import { concluirDemoMarcada, ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
 import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
@@ -1767,6 +1768,7 @@ const responderRajadaDeVendas = async (
   });
   const { history, pendente } = separarTurnoAtual(recent.reverse());
   if (!pendente) return;
+  const ferramentas = await ferramentasDaVal(ticket, cfg);
   const reply = await generateBotReply({
     persona: await promptDeVendas(cfg, ticket.salesSource, contact.id),
     knowledge: "",
@@ -1777,7 +1779,7 @@ const responderRajadaDeVendas = async (
     provedores: await provedoresDaEmpresa(ticket.companyId),
     uso: { companyId: ticket.companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "qr" },
     // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
-    ferramentas: (await ferramentasDaVal(ticket, cfg)) ?? undefined
+    ferramentas: ferramentas ?? undefined
   });
   if (!reply) return;
   const texto = await aplicarResposta(ticket, contact, cfg, reply.text, {
@@ -1788,6 +1790,19 @@ const responderRajadaDeVendas = async (
   const pedidos = extrairMarcadoresDeVendas(reply.text);
   if (pedidos.video) await enviarVideoDeVendas(ticket, cfg);
   if (pedidos.tabela) await enviarTabelaDeVendas(ticket, cfg);
+  // Demo marcada (11/11/2026): link do Meet ao lead, card em "Agendamento", Val ligada.
+  const demo = ferramentas?.demoMarcada();
+  if (demo) {
+    await concluirDemoMarcada(
+      ticket,
+      cfg,
+      demo,
+      async corpo => {
+        await SendWhatsAppMessage({ body: corpo, ticket, sentBy: "ai" });
+      },
+      tk => ligarValNaConversa(tk, true, "agenda_demo")
+    );
+  }
 };
 
 /** "Responder agora" no número normal: ver `responderAgoraNoOficial`. */

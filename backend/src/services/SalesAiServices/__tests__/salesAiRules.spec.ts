@@ -8,6 +8,7 @@ import {
   escolherListaDeDisparo,
   lerIndicacao,
   lerComandoVal,
+  PROTOCOLO_DA_INDICACAO,
   normalizarTelefone,
   produtoDaConversa,
   regrasCompletas,
@@ -322,5 +323,33 @@ describe("indicação de outra pessoa (10/11/2026)", () => {
     expect(escolherListaDeDisparo([71, 80], [5], [80, 71])).toBe(80);
     expect(escolherListaDeDisparo([80, 71], [], [])).toBe(71);
     expect(escolherListaDeDisparo([], [71], [71])).toBeNull();
+  });
+});
+
+describe("outro número do próprio lead (11/11/2026, caso Baladinha)", () => {
+  it("lê o número, marca como próprio e tira o marcador do texto", () => {
+    const r = extrairMarcadoresDeVendas(
+      'Combinado! Vamos te chamar no (21) 98399-7414. [[OUTRO_NUMERO numero="(21) 98399-7414"]] [[RESUMO=Baladinha pediu outro número]]'
+    );
+    expect(r.indicacao).toEqual({ nome: null, numero: "5521983997414", proprio: true });
+    expect(r.texto).toBe("Combinado! Vamos te chamar no (21) 98399-7414.");
+  });
+
+  it("vence a transferência que a playbook pediu", () => {
+    const r = extrairMarcadoresDeVendas('Vou pedir para a equipe chamar. [[TRANSFERIR]] [[OUTRO NÚMERO numero="21983997414"]] [[ETAPA=transferido]]');
+    expect(r.indicacao?.proprio).toBe(true);
+    expect(r.transferir).toBe(false);
+    expect(r.etapa).toBeNull();
+  });
+
+  it("sem número válido a transferência segue", () => {
+    const r = extrairMarcadoresDeVendas('Vou chamar o Hélio. [[OUTRO_NUMERO numero="123"]] [[TRANSFERIR]]');
+    expect(r.indicacao).toBeNull();
+    expect(r.transferir).toBe(true);
+  });
+
+  it("a regra vai junto da playbook", () => {
+    expect(PROTOCOLO_DA_INDICACAO).toContain("[[OUTRO_NUMERO");
+    expect(PROTOCOLO_DA_INDICACAO).toContain("NÃO transfira");
   });
 });

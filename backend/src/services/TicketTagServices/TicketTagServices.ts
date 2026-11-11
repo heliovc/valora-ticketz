@@ -72,7 +72,9 @@ export async function ticketTagAdd(
 export async function ticketTagRemove(
   ticketId: number,
   tagId: number,
-  companyId?: number
+  companyId?: number,
+  /** `manterBot`: a troca de lista é da própria Val (demo marcada), o bot segue ligado. */
+  opcoes: { manterBot?: boolean } = {}
 ) {
   const ticket = await ShowTicketService(ticketId, companyId);
   if (!ticket) {
@@ -92,7 +94,7 @@ export async function ticketTagRemove(
 
   // Saiu da lista que ligava o bot: o bot cala. Mover para "Negociação", onde
   // um humano assume, não pode deixar o robô respondendo por cima dele.
-  void desligarBotAoSairDaLista(ticketId, tagId, ticket.companyId);
+  if (!opcoes.manterBot) void desligarBotAoSairDaLista(ticketId, tagId, ticket.companyId);
 
   await ticket.reload();
   websocketUpdateTicket(ticket);

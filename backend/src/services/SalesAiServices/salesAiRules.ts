@@ -358,13 +358,20 @@ export interface IndicacaoDoLead {
   nome: string | null;
   /** Só dígitos, com DDI (55 no Brasil). */
   numero: string;
+  /**
+   * O próprio lead pediu para falarmos em OUTRO número dele (11/11/2026, caso
+   * Baladinha: "Me chama no 21 98399-7414"). Mesmo caminho da indicação, mas o
+   * card novo é do mesmo lead.
+   */
+  proprio?: boolean;
 }
 
 /** Regra do sistema que vai junto da playbook: vale para Val Vendas e Val Saúde. */
 export const PROTOCOLO_DA_INDICACAO = [
   "Indicação de outra pessoa (regra do sistema, vale acima da playbook):",
   '- Se o lead disser que quem cuida do assunto é outra pessoa e passar o telefone dela (no texto ou num contato compartilhado, que aparece como "👤 Contato: …"), NÃO transfira. Agradeça em uma frase curta, diga que vamos falar com essa pessoa e escreva [[INDICACAO nome="nome da pessoa indicada" numero="DDD e número"]]. Nessa resposta não escreva [[TRANSFERIR]].',
-  "- Se ele indicar a pessoa sem o telefone, peça o WhatsApp dela antes."
+  "- Se ele indicar a pessoa sem o telefone, peça o WhatsApp dela antes.",
+  '- Se o lead pedir para falarmos, chamarmos ou ligarmos em OUTRO número dele mesmo (da mesma empresa), NÃO transfira. Agradeça em uma frase curta, diga que vamos chamar nesse número pelo WhatsApp e escreva [[OUTRO_NUMERO numero="DDD e número"]]. Nessa resposta não escreva [[TRANSFERIR]].'
 ].join("\n");
 
 /** Atributos de `[[INDICACAO nome="Dr. Jorge" numero="(21) 97217-2740"]]`. Sem número válido = null. */
@@ -416,7 +423,7 @@ export function extrairMarcadoresDeVendas(texto: string): {
   video: boolean;
   /** A IA pediu a tabela de taxas em PDF. */
   tabela: boolean;
-  /** O lead indicou outra pessoa: vira card novo, não transferência. */
+  /** O lead indicou outra pessoa (ou outro número dele): vira card novo, não transferência. */
   indicacao: IndicacaoDoLead | null;
 } {
   let etapa: EtapaDeVendas | null = null;
@@ -428,6 +435,11 @@ export function extrairMarcadoresDeVendas(texto: string): {
   const limpo = String(texto || "")
     .replace(/\[\[\s*INDICA[CÇ][AÃ]O\b([^\]]*)\]\]/gi, (_, attrs: string) => {
       indicacao = indicacao || lerIndicacao(attrs);
+      return "";
+    })
+    .replace(/\[\[\s*OUTRO[_ ]N[UÚ]MERO\b([^\]]*)\]\]/gi, (_, attrs: string) => {
+      const lido = lerIndicacao(attrs);
+      indicacao = indicacao || (lido ? { nome: null, numero: lido.numero, proprio: true } : null);
       return "";
     })
     .replace(/\[\[\s*ETAPA\s*[=:]\s*([a-z_]+)\s*\]\]/gi, (_, v: string) => {

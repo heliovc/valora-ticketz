@@ -48,12 +48,13 @@ import {
   avaliarMensagemRecebida,
   decidir as decidirVendas,
   escopoDeVendas,
+  ligarValNaConversa,
   promptDeVendas,
   tentarDepoisDoLimite
 } from "../SalesAiServices/SalesAiService";
 import { extrairMarcadoresDeVendas, origemDoUso } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
-import { ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
+import { concluirDemoMarcada, ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
 import { marcarEntregaRecusada } from "../TagServices/entregaRecusada";
 import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
 import { SalesAiConfig } from "../../models/SalesAi";
@@ -379,6 +380,7 @@ async function responderDeVendas(
   }
   const { history, pendente } = separarTurnoAtual(await mensagensRecentes(ticket.id));
   if (!pendente) return;
+  const ferramentas = await ferramentasDaVal(ticket, cfg);
   const resposta = await generateBotReply({
     persona: await promptDeVendas(cfg, ticket.salesSource, atual.id),
     knowledge: "",
@@ -389,32 +391,41 @@ async function responderDeVendas(
     provedores: await provedoresDaEmpresa(whatsapp.companyId),
     uso: { companyId: whatsapp.companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "oficial" },
     // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
-    ferramentas: (await ferramentasDaVal(ticket, cfg)) ?? undefined
+    ferramentas: ferramentas ?? undefined
   });
   if (!resposta) return;
   const texto = await aplicarResposta(ticket, atual, cfg, resposta.text, {
     handoff: resposta.kind === "handoff",
     falha: !!resposta.falha
   });
-  if (!texto) return;
-  const { wamid } = await sendText(whatsapp, atual.number, texto);
-  await CreateMessageService({
-    messageData: {
-      id: wamid,
-      ticketId: ticket.id,
-      contactId: atual.id,
-      body: texto,
-      fromMe: true,
-      read: true,
-      ack: 1,
-      channel: CHANNEL,
-      sentBy: "ai"
-    },
-    companyId: whatsapp.companyId
-  });
-  const pedidos = extrairMarcadoresDeVendas(resposta.text);
-  if (pedidos.video) await enviarVideoDeVendas(ticket, cfg, atual);
-  if (pedidos.tabela) await enviarTabelaDeVendas(ticket, cfg, atual);
+  const enviarTexto = async (corpo: string): Promise<void> => {
+    const { wamid } = await sendText(whatsapp, atual.number, corpo);
+    await CreateMessageService({
+      messageData: {
+        id: wamid,
+        ticketId: ticket.id,
+        contactId: atual.id,
+        body: corpo,
+        fromMe: true,
+        read: true,
+        ack: 1,
+        channel: CHANNEL,
+        sentBy: "ai"
+      },
+      companyId: whatsapp.companyId
+    });
+  };
+  if (texto) {
+    await enviarTexto(texto);
+    const pedidos = extrairMarcadoresDeVendas(resposta.text);
+    if (pedidos.video) await enviarVideoDeVendas(ticket, cfg, atual);
+    if (pedidos.tabela) await enviarTabelaDeVendas(ticket, cfg, atual);
+  }
+  // Demo marcada (11/11/2026): link do Meet ao lead, card em "Agendamento", Val ligada.
+  const demo = ferramentas?.demoMarcada();
+  if (demo) {
+    await concluirDemoMarcada(ticket, cfg, demo, enviarTexto, tk => ligarValNaConversa(tk, true, "agenda_demo"));
+  }
 }
 
 /**

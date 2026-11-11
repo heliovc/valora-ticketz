@@ -38,7 +38,6 @@ import {
 } from "./salesAiRules";
 import { motivoDoLoopNaConversa } from "../AiBotServices/EvitarLoop";
 import { ehNumeroDaEmpresa } from "../AiBotServices/NumerosProprios";
-import { liberadoParaTesteNoOficial } from "../../helpers/testeDoNumeroDaEmpresa";
 import { contextoDaIndicacao, encaminharIndicacao, moverParaAtendimento } from "./IndicacaoDaVal";
 
 /**
@@ -268,9 +267,7 @@ export async function decidir(
     dentroDoHorario: dentroDoHorario(cfg.businessHours as HorarioDeFuncionamento, new Date()),
     agora: new Date(),
     motivoDoLoop: loop,
-    // Exceção temporária de 09/11 (só no Oficial, com prazo): ver o helper.
-    numeroDaEmpresa:
-      daEmpresa && !liberadoParaTesteNoOficial(contact.number, ticket.channel, new Date())
+    numeroDaEmpresa: daEmpresa
   });
 }
 
@@ -347,7 +344,8 @@ export async function aplicarResposta(
   const mudancas: Record<string, unknown> = {};
   if (m.etapa) mudancas.salesStage = m.etapa;
   if (m.resumo) mudancas.salesSummary = m.resumo.slice(0, 300);
-  // Indicação vence a transferência: a Val para neste card e abre o do indicado.
+  // Indicação (ou outro número do próprio lead) vence a transferência: a Val
+  // para neste card e abre o card novo.
   const transferir = (m.transferir || sinais.handoff) && !m.indicacao;
   if (transferir) {
     // Demo ou teste aceitos também transferem (playbook, seção 8): a etapa
@@ -363,13 +361,22 @@ export async function aplicarResposta(
     if (mudancas.salesStage === "transferido") await moverParaAtendimento(ticket, cfg);
   }
   if (m.indicacao) {
-    const r = await encaminharIndicacao(ticket, contact, m.indicacao, m.resumo);
-    if (!r.ok) {
-      // Não deu para abrir o card do indicado: vira transferência, com o motivo.
+    // Não deu para abrir o card novo (ou a Meta não entregou a abertura no
+    // outro número do próprio lead): vira transferência, com o motivo.
+    const transferirComMotivo = async (motivo: string): Promise<void> => {
+      await ticket.reload().catch(() => undefined);
       await ticket.update({ salesStage: "transferido" } as any);
-      await avisarTransferencia(ticket, contact, cfg, `${r.motivo}. ${m.resumo || ""}`.trim());
+      await avisarTransferencia(ticket, contact, cfg, `${motivo}. ${m.resumo || ""}`.trim());
       await moverParaAtendimento(ticket, cfg);
-    }
+    };
+    const r = await encaminharIndicacao(
+      ticket,
+      contact,
+      m.indicacao,
+      m.resumo,
+      m.indicacao.proprio ? transferirComMotivo : undefined
+    );
+    if (!r.ok) await transferirComMotivo(r.motivo || "não foi possível abrir o card novo");
   }
   // Sem interesse = perdido; demo ou teste aceitos = fechado. Dispara o gatilho
   // do resultado em Automações (mover para "Perdido", desligar a Val...).
