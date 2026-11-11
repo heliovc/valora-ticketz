@@ -55,6 +55,7 @@ import {
   AiDecisionLog,
   SalesPlaybookVersion
 } from "../models/SalesAi";
+import AiUsageLog from "../models/AiUsageLog";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const dbConfig = require("../config/database");
@@ -115,7 +116,8 @@ const models = [
   CampaignRef,
   CampaignListMember,
   AiDecisionLog,
-  SalesPlaybookVersion
+  SalesPlaybookVersion,
+  AiUsageLog
 ];
 
 sequelize.addModels(models);

@@ -7,6 +7,8 @@ import {
   nomeParaOBot,
   saudacaoDoPeriodo
 } from "./aiBotTurn";
+import { lerUso, Medidor, novoMedidor } from "./usoDaIa";
+import { ContextoDeUso, registrarUsoDaIa } from "../services/AiUsageServices/RegistrarUsoDaIa";
 
 /**
  * Helper de geração de respostas do bot de IA (Valora).
@@ -193,6 +195,8 @@ export type GenerateBotReplyParams = {
   provedores: ProvedorDoBot[];
   /** Ferramentas desta conversa (agenda…). Vazio = o bot só conversa. */
   ferramentas?: FerramentasParaOBot;
+  /** Quem pediu (empresa, conversa, bot, canal): registra tokens e custo. Vazio = não registra. */
+  uso?: ContextoDeUso;
 };
 
 export type NomeDoProvedor = "gemini" | "groq" | "anthropic" | "openrouter";
@@ -202,6 +206,10 @@ export type ProvedorDoBot = {
   provider: NomeDoProvedor;
   model: string;
   apiKey: string;
+  /** De quem é a chave: do ambiente da Valora ou da própria empresa. Só para o consumo. */
+  dona?: "valora" | "empresa";
+  /** 4 últimos caracteres da chave, para a tela de consumo. */
+  final?: string;
 };
 
 /** Modelo sugerido para cada provedor quando a empresa não escolhe. */
@@ -386,7 +394,8 @@ async function callAnthropic(
   systemText: string,
   turns: BotTurn[],
   apiKey: string,
-  model: string
+  model: string,
+  medidor?: Medidor
 ): Promise<string> {
   const anthropic = getClient(apiKey);
 
@@ -408,6 +417,8 @@ async function callAnthropic(
       })
     )
   });
+
+  medidor?.somar(lerUso("anthropic", response, model || ANTHROPIC_MODEL));
 
   return response.content
     .filter((block): block is Anthropic.TextBlock => block.type === "text")
@@ -465,7 +476,8 @@ async function callGemini(
   systemText: string,
   turns: BotTurn[],
   apiKey: string,
-  model: string
+  model: string,
+  medidor?: Medidor
 ): Promise<string> {
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: MAX_TOKENS,
@@ -488,6 +500,7 @@ async function callGemini(
   };
 
   const data = await postComRetentativa(corpo, apiKey, model);
+  medidor?.somar(lerUso("gemini", data, model));
 
   // Resposta barrada por filtro de conteúdo não traz candidato: vira handoff
   // lá em cima, como qualquer resposta vazia.
@@ -543,7 +556,8 @@ async function callCompativelOpenAI(
   systemText: string,
   turns: BotTurn[],
   apiKey: string,
-  model: string
+  model: string,
+  medidor?: Medidor
 ): Promise<string> {
   const extras: Record<string, string> =
     qual === "openrouter" ? { "HTTP-Referer": "https://valorasolucoes.com", "X-Title": "Valora Elo" } : {};
@@ -553,7 +567,7 @@ async function callCompativelOpenAI(
   // próximo da lista assumir.
   for (let tentativa = 1; ; tentativa += 1) {
     // eslint-disable-next-line no-await-in-loop
-    const texto = await chamarCompativelUmaVez(qual, systemText, turns, apiKey, model, extras);
+    const texto = await chamarCompativelUmaVez(qual, systemText, turns, apiKey, model, extras, medidor);
     if (texto.texto) return texto.texto;
     if (tentativa >= 2) throw new Error(`resposta vazia de ${qual}: ${texto.corpo}`);
     logger.warn({ provider: qual, corpo: texto.corpo }, "[aiBot] resposta vazia; tentando de novo");
@@ -566,7 +580,8 @@ async function chamarCompativelUmaVez(
   turns: BotTurn[],
   apiKey: string,
   model: string,
-  extras: Record<string, string>
+  extras: Record<string, string>,
+  medidor?: Medidor
 ): Promise<{ texto: string; corpo: string }> {
   const messages = [
     { role: "system", content: systemText },
@@ -586,7 +601,13 @@ async function chamarCompativelUmaVez(
       // com os 15 s do Gemini ele caía sempre por tempo.
       timeout: qual === "openrouter" ? OPENROUTER_TIMEOUT_MS : GEMINI_TIMEOUT_MS
     });
-  const base = { model: model || MODELO_PADRAO[qual], max_tokens: MAX_TOKENS, messages };
+  const base = {
+    model: model || MODELO_PADRAO[qual],
+    max_tokens: MAX_TOKENS,
+    messages,
+    // OpenRouter devolve o custo em dólares no `usage` (tela de consumo).
+    ...(qual === "openrouter" ? { usage: { include: true } } : {})
+  };
   let data: any;
   try {
     ({ data } = await enviar({ ...base, ...ajustes }));
@@ -601,6 +622,7 @@ async function chamarCompativelUmaVez(
     );
     ({ data } = await enviar(base));
   }
+  medidor?.somar(lerUso(qual, data, model));
   // Modelos de raciocínio às vezes devolvem o pensamento entre <think>…</think>: nunca vai ao cliente.
   const texto = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   return { texto, corpo: texto ? "" : JSON.stringify(data || "").slice(0, 300) };
@@ -610,14 +632,15 @@ async function chamarCompativelUmaVez(
 export async function chamarProvedor(
   provedor: ProvedorDoBot,
   systemText: string,
-  turns: BotTurn[]
+  turns: BotTurn[],
+  medidor?: Medidor
 ): Promise<string> {
   const model = provedor.model || MODELO_PADRAO[provedor.provider];
-  if (provedor.provider === "gemini") return callGemini(systemText, turns, provedor.apiKey, model);
+  if (provedor.provider === "gemini") return callGemini(systemText, turns, provedor.apiKey, model, medidor);
   if (provedor.provider === "groq" || provedor.provider === "openrouter") {
-    return callCompativelOpenAI(provedor.provider, systemText, turns, provedor.apiKey, model);
+    return callCompativelOpenAI(provedor.provider, systemText, turns, provedor.apiKey, model, medidor);
   }
-  return callAnthropic(systemText, turns, provedor.apiKey, model);
+  return callAnthropic(systemText, turns, provedor.apiKey, model, medidor);
 }
 
 /**
@@ -680,8 +703,12 @@ export const generateBotReply = async (
   // Um modelo por vez, na ordem da empresa: cota estourada, chave inválida ou
   // queda num deles passa para o próximo sem o cliente perceber.
   for (const provedor of provedores) {
+    const medidor = novoMedidor();
+    const anotar = (falha: unknown | null) => {
+      void registrarUsoDaIa(params.uso, { ...provedor, model: provedor.model || MODELO_PADRAO[provedor.provider] }, medidor.total(), falha);
+    };
     try {
-      let text = await chamarProvedor(provedor, systemText, turns);
+      let text = await chamarProvedor(provedor, systemText, turns, medidor);
       // Ferramentas: o modelo pede (CONSULTAR_AGENDA, PRE_RESERVAR…), o sistema
       // executa e devolve o resultado, e o modelo escreve a resposta final.
       // Poucas rodadas de propósito: uma consulta e uma reserva, nunca um giro.
@@ -701,7 +728,7 @@ export const generateBotReply = async (
           // O texto descartado pode trazer SALVAR/MOVER válidos (ex.: a data que o cliente disse).
           comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR|ENVIAR_MIDIA)\b[^\]]*\]\]/gi) || []));
           turns = [...turns, { role: "assistant", text }, { role: "user", text: cobranca }];
-          text = await chamarProvedor(provedor, systemText, turns);
+          text = await chamarProvedor(provedor, systemText, turns, medidor);
           continue;
         }
         rodadas += 1;
@@ -711,8 +738,9 @@ export const generateBotReply = async (
         comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR|ENVIAR_MIDIA)\b[^\]]*\]\]/gi) || []));
         const resultado = await params.ferramentas.executar(chamadas);
         turns = [...turns, { role: "assistant", text }, { role: "user", text: resultadoParaOModelo(resultado) }];
-        text = await chamarProvedor(provedor, systemText, turns);
+        text = await chamarProvedor(provedor, systemText, turns, medidor);
       }
+      anotar(null);
 
       const passagem = lerPassagemParaHumano(text);
       if (passagem) {
@@ -737,6 +765,7 @@ export const generateBotReply = async (
         { provider: provedor.provider, model: provedor.model, status: axios.isAxiosError(err) ? err.response?.status : undefined, detalhe },
         "[aiBot] modelo falhou; tentando o próximo da lista"
       );
+      anotar(err);
     }
   }
   return { kind: "handoff", text: HANDOFF_MESSAGE, falha: true };

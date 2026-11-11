@@ -43,7 +43,7 @@ import {
   promptDeVendas,
   tentarDepoisDoLimite
 } from "../SalesAiServices/SalesAiService";
-import { DecisaoDaIa, extrairMarcadoresDeVendas, lerComandoVal } from "../SalesAiServices/salesAiRules";
+import { DecisaoDaIa, extrairMarcadoresDeVendas, lerComandoVal, origemDoUso } from "../SalesAiServices/salesAiRules";
 import { enviarVideoDeVendas } from "../SalesAiServices/VideoDeVendas";
 import { ferramentasDaVal } from "../SalesAiServices/FerramentasDaVal";
 import { enviarTabelaDeVendas } from "../SalesAiServices/TabelaDeVendas";
@@ -808,7 +808,8 @@ export const verifyMediaMessage = async (
       const texto = await transcreverAudioSePossivel(
         ticket.companyId,
         mediaUrl.startsWith("http") ? mediaUrl : `${getPublicPath()}/${mediaUrl}`,
-        mimetype
+        mimetype,
+        { ticketId: ticket.id, canal: "qr" }
       );
       if (texto) body = `🎤 ${texto}`;
     }
@@ -1689,7 +1690,8 @@ const responderRajadaComBot = async (
       foco,
       provedores: await provedoresDaEmpresa(ticket.companyId),
       acoes: await contextoDeAcoes(ticket.id, ticket.companyId),
-      ferramentas: await ferramentasDoBot(ticket.id, ticket.companyId)
+      ferramentas: await ferramentasDoBot(ticket.id, ticket.companyId),
+      uso: { companyId: ticket.companyId, ticketId: ticket.id, origem: "atendimento", canal: "qr" }
     });
 
     // Chave central ausente: erro de implantação, ninguém responde.
@@ -1773,6 +1775,7 @@ const responderRajadaDeVendas = async (
     contactName: contact.name,
     files: [],
     provedores: await provedoresDaEmpresa(ticket.companyId),
+    uso: { companyId: ticket.companyId, ticketId: ticket.id, origem: origemDoUso(ticket.salesSource), canal: "qr" },
     // Agenda da Valora: consultar e marcar a demonstração (09/11/2026).
     ferramentas: (await ferramentasDaVal(ticket, cfg)) ?? undefined
   });
