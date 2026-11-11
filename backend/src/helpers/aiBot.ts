@@ -64,6 +64,20 @@ const GEMINI_RETRY_DELAYS_MS = [800, 2500];
 const GEMINI_RETRY_STATUS = [429, 500, 503];
 
 const MAX_TOKENS = Number(process.env.AI_BOT_MAX_TOKENS || 600);
+/**
+ * Teto para o modelo que recusa "raciocínio desligado" (Claude Sonnet 5.5 no
+ * OpenRouter): ele raciocina antes de responder e, com 600, o raciocínio comia
+ * o teto e a resposta voltava vazia. Caso real (Val, 10/11/2026): o Sonnet falhou,
+ * o Haiku de reserva respondeu e tratou a casa de festas como cliente de festa.
+ * A resposta continua curta; o teto só dá espaço para o raciocínio.
+ */
+const MAX_TOKENS_COM_RACIOCINIO = Number(process.env.AI_BOT_MAX_TOKENS_RACIOCINIO || 2500);
+/** Modelos que já recusaram os ajustes neste processo: vão direto sem eles (poupa o 400). */
+const recusamAjustes = new Set<string>();
+/** Só para os testes. */
+export function esquecerRecusasDeAjustes(): void {
+  recusamAjustes.clear();
+}
 /** Rodadas de ferramenta por resposta: uma consulta e uma reserva, no máximo. */
 const MAX_RODADAS_DE_FERRAMENTAS = 2;
 const HANDOFF_TOKEN = "__HUMANO__";
@@ -615,19 +629,27 @@ async function chamarCompativelUmaVez(
     // OpenRouter devolve o custo em dólares no `usage` (tela de consumo).
     ...(qual === "openrouter" ? { usage: { include: true } } : {})
   };
+  // Sem os ajustes o modelo raciocina: o teto precisa caber o raciocínio e a resposta.
+  const semAjustes = { ...base, max_tokens: Math.max(MAX_TOKENS, MAX_TOKENS_COM_RACIOCINIO) };
+  const chave = `${qual}:${base.model}`;
   let data: any;
-  try {
-    ({ data } = await enviar({ ...base, ...ajustes }));
-  } catch (err) {
-    // Modelo que recusa um dos ajustes (ex.: Claude Sonnet 5.5 no OpenRouter
-    // devolve 400 para "raciocínio desligado", 09/11/2026): tenta de novo só com
-    // o essencial, em vez de pular para o modelo seguinte.
-    if (!(axios.isAxiosError(err) && err.response?.status === 400)) throw err;
-    logger.warn(
-      { provider: qual, model, detalhe: JSON.stringify(err.response?.data || "").slice(0, 300) },
-      "[aiBot] 400 com os ajustes; tentando sem eles"
-    );
-    ({ data } = await enviar(base));
+  if (recusamAjustes.has(chave)) {
+    ({ data } = await enviar(semAjustes));
+  } else {
+    try {
+      ({ data } = await enviar({ ...base, ...ajustes }));
+    } catch (err) {
+      // Modelo que recusa um dos ajustes (ex.: Claude Sonnet 5.5 no OpenRouter
+      // devolve 400 para "raciocínio desligado", 09/11/2026): tenta de novo só com
+      // o essencial, em vez de pular para o modelo seguinte.
+      if (!(axios.isAxiosError(err) && err.response?.status === 400)) throw err;
+      recusamAjustes.add(chave);
+      logger.warn(
+        { provider: qual, model, detalhe: JSON.stringify(err.response?.data || "").slice(0, 300) },
+        "[aiBot] 400 com os ajustes; tentando sem eles (e sem eles daqui em diante)"
+      );
+      ({ data } = await enviar(semAjustes));
+    }
   }
   medidor?.somar(lerUso(qual, data, model));
   // Modelos de raciocínio às vezes devolvem o pensamento entre <think>…</think>: nunca vai ao cliente.
