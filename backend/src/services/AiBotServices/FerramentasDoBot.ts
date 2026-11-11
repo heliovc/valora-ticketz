@@ -155,6 +155,6 @@ export async function ferramentasDoBot(
     catalogo,
     executar,
     automaticas: (mensagem, agora) => consultasAutomaticas(nomes, mensagem, agora),
-    cobrarConsulta: (resposta, executadas) => cobrancaDeConsulta(nomes, resposta, executadas)
+    cobrarConsulta: (resposta, executadas, mensagem) => cobrancaDeConsulta(nomes, resposta, executadas, mensagem)
   };
 }

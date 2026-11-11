@@ -111,7 +111,7 @@ export type FerramentasParaOBot = {
    * Confere a resposta antes de ir ao cliente: devolve o texto que a manda de
    * volta ao modelo (ex.: afirmou "livre" sem consultar), ou `null`.
    */
-  cobrarConsulta?: (resposta: string, executadas: string[]) => string | null;
+  cobrarConsulta?: (resposta: string, executadas: string[], mensagem?: string) => string | null;
 };
 
 /** O comando como o modelo escreveria — args com `_` são internos e ficam de fora. */
@@ -719,12 +719,12 @@ export const generateBotReply = async (
       while (params.ferramentas && rodadas < MAX_RODADAS_DE_FERRAMENTAS) {
         const chamadas = extrairChamadas(text, params.ferramentas.nomes);
         if (!chamadas.length) {
-          // Afirmou disponibilidade sem consultar: volta ao modelo UMA vez,
-          // antes de o cliente receber.
-          const cobranca = cobrou ? null : params.ferramentas.cobrarConsulta?.(text, executadas) ?? null;
+          // Afirmou disponibilidade sem consultar, ou o cliente pediu a proposta e ela
+          // não saiu: volta ao modelo UMA vez, antes de o cliente receber.
+          const cobranca = cobrou ? null : params.ferramentas.cobrarConsulta?.(text, executadas, params.userMessage) ?? null;
           if (!cobranca) break;
           cobrou = true;
-          logger.warn(`[aiBot] resposta afirmou disponibilidade sem consultar; devolvida ao modelo: ${text.slice(0, 120)}`);
+          logger.warn(`[aiBot] resposta devolvida ao modelo (${cobranca.slice(9, 60)}…): ${text.slice(0, 120)}`);
           // O texto descartado pode trazer SALVAR/MOVER válidos (ex.: a data que o cliente disse).
           comandosPendentes.push(...(text.match(/\[\[\s*(?:MOVER|SALVAR|ENVIAR_MIDIA)\b[^\]]*\]\]/gi) || []));
           turns = [...turns, { role: "assistant", text }, { role: "user", text: cobranca }];

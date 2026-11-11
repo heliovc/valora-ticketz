@@ -170,9 +170,47 @@ export const COBRANCA_DE_CONSULTA =
   '[[CONSULTAR_AGENDA data="dd/mm/aaaa"]] (ou mes="mm/aaaa"). ' +
   "Se não citou, reescreva a resposta sem dizer se alguma data está livre ou ocupada.";
 
+/**
+ * O cliente pediu a proposta (ou os valores) nesta mensagem? Caso real (demo,
+ * 11/11/2026): "Quero o sábado. Me manda a proposta com a banda e o open bar" —
+ * o bot consultou o sábado e só ofereceu a pré-reserva, sem a proposta.
+ */
+export function pedeProposta(mensagem: string): boolean {
+  const t = semAcento(mensagem);
+  // "não precisa da proposta", "sem proposta"
+  if (/\b(nao|sem)\s+(\w+\s+){0,2}(a\s+|da\s+|de\s+)?(proposta|orcamento)\b/.test(t)) return false;
+  // Quer fechar a que já recebeu: é o COBRAR_SINAL, não outra proposta.
+  if (/\b(fechar|fecho|fechamos|aceit\w*|sinal|pix|pag\w*)\b/.test(t)) return false;
+  const pedido = "(manda|mande|mandar|envia|envie|enviar|faz|faca|fazer|gera|gere|gerar|monta|monte|montar|passa|passe|passar|quero|queria|gostaria|ver|receber|saber)";
+  return new RegExp(`\\b${pedido}\\b[^.?!]{0,40}\\b(proposta|orcamento|valores|precos)\\b`).test(t);
+}
+
+export const COBRANCA_DE_PROPOSTA =
+  "[SISTEMA] O cliente pediu a proposta nesta mensagem e ela NÃO foi gerada. Escreva SÓ o comando " +
+  '[[GERAR_PROPOSTA data="dd/mm/aaaa" pacote="…" extras="…" observacao="…"]] com a data e o pacote que ele escolheu ' +
+  "e os itens extras que ele pediu (o que não está na lista vai em observacao). A pré-reserva você oferece depois, junto com o link.";
+
 /** Texto que devolve a resposta ao modelo, ou `null` quando ela pode seguir. */
-export function cobrancaDeConsulta(nomes: string[], resposta: string, executadas: string[]): string | null {
-  if (!nomes.includes("CONSULTAR_AGENDA")) return null;
-  if (executadas.some(n => FERRAMENTAS_DE_AGENDA.includes(n))) return null;
-  return afirmaDisponibilidade(resposta) ? COBRANCA_DE_CONSULTA : null;
+export function cobrancaDeConsulta(
+  nomes: string[],
+  resposta: string,
+  executadas: string[],
+  mensagem = ""
+): string | null {
+  if (
+    nomes.includes("CONSULTAR_AGENDA") &&
+    !executadas.some(n => FERRAMENTAS_DE_AGENDA.includes(n)) &&
+    afirmaDisponibilidade(resposta)
+  ) {
+    return COBRANCA_DE_CONSULTA;
+  }
+  if (
+    nomes.includes("GERAR_PROPOSTA") &&
+    !executadas.includes("GERAR_PROPOSTA") &&
+    !/\/proposta\//.test(resposta) &&
+    pedeProposta(mensagem)
+  ) {
+    return COBRANCA_DE_PROPOSTA;
+  }
+  return null;
 }

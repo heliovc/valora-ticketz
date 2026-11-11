@@ -11,6 +11,7 @@ import {
   cobrancaDeConsulta,
   consultasAutomaticas,
   datasCitadas,
+  pedeProposta,
   periodoCitado,
   tipoCitado
 } from "../../services/AiBotServices/consultaDaAgenda";
@@ -193,5 +194,65 @@ describe("período aberto (10/11/2026: \"15 anos, na semana que vem\")", () => {
       { nome: "CONSULTAR_AGENDA", args: { data: "24/11/2026" } }
     ]);
     expect(consultasAutomaticas(["GERAR_PROPOSTA"], "semana que vem", AGORA)).toEqual([]);
+  });
+});
+
+describe("cliente pediu a proposta (11/11/2026: \"Quero o sábado. Me manda a proposta…\")", () => {
+  const FRASE = "Quero o sábado. Me manda a proposta com a banda e o open bar premium. Ah, e queria fogos de artifício também";
+  const TODAS = ["CONSULTAR_AGENDA", "PRE_RESERVAR", "GERAR_PROPOSTA", "COBRAR_SINAL"];
+
+  it("reconhece o pedido, e não confunde com quem já recebeu ou quer fechar", () => {
+    expect(pedeProposta(FRASE)).toBe(true);
+    expect(pedeProposta("pode me enviar o orçamento?")).toBe(true);
+    expect(pedeProposta("queria saber os valores")).toBe(true);
+    expect(pedeProposta("me passa os preços pra 100 pessoas")).toBe(true);
+    expect(pedeProposta("Não precisa pré-reservar ainda, me manda a proposta")).toBe(true);
+    expect(pedeProposta("recebi a proposta, obrigada")).toBe(false);
+    expect(pedeProposta("quero fechar a proposta")).toBe(false);
+    expect(pedeProposta("não precisa da proposta ainda")).toBe(false);
+    expect(pedeProposta("quanto fica o sinal?")).toBe(false);
+    expect(pedeProposta("vou ver com meu marido")).toBe(false);
+  });
+
+  it("devolve ao modelo quando a proposta não saiu; nunca quando saiu ou não foi pedida", () => {
+    const r = "Sábado, 21/11, está livre no Salão Jardim. Posso deixar pré-reservado por 48 horas?";
+    expect(cobrancaDeConsulta(TODAS, r, ["CONSULTAR_AGENDA"], FRASE)).toContain("GERAR_PROPOSTA");
+    expect(cobrancaDeConsulta(TODAS, r, ["CONSULTAR_AGENDA", "GERAR_PROPOSTA"], FRASE)).toBeNull();
+    expect(cobrancaDeConsulta(TODAS, "Aqui está: https://x.com/proposta/abc", ["CONSULTAR_AGENDA"], FRASE)).toBeNull();
+    expect(cobrancaDeConsulta(TODAS, r, ["CONSULTAR_AGENDA"], "e o sábado?")).toBeNull();
+    expect(cobrancaDeConsulta(NOMES, r, ["CONSULTAR_AGENDA"], FRASE)).toBeNull();
+  });
+
+  it("no motor: consultou, ofereceu só a pré-reserva → volta, gera a proposta e o cliente recebe o link", async () => {
+    (axios.post as jest.Mock).mockReset();
+    const executar = jest.fn()
+      .mockResolvedValueOnce("CONSULTAR_AGENDA: 21/11/2026 (sábado)\n- Salão Jardim: LIVRE\nResumo: LIVRE.")
+      .mockResolvedValueOnce("GERAR_PROPOSTA: Proposta criada. Link para o cliente: https://smartpay.valorasolucoes.com/proposta/abc123\n- 15 Anos Sonho: pacote R$ 24.000,00 + extras R$ 11.000,00 = R$ 35.000,00");
+    const f: FerramentasParaOBot = {
+      nomes: TODAS,
+      catalogo: "FERRAMENTAS",
+      executar,
+      automaticas: (m, agora) => consultasAutomaticas(TODAS, m, agora),
+      cobrarConsulta: (r, ex, m) => cobrancaDeConsulta(TODAS, r, ex, m)
+    };
+    for (const t of [
+      '[[CONSULTAR_AGENDA data="21/11/2026"]]',
+      "Sábado, 21/11, está livre! Posso deixar pré-reservado por 48 horas, sem compromisso?",
+      '[[GERAR_PROPOSTA data="21/11/2026" extras="Banda ao vivo, Open bar premium" observacao="fogos de artifício"]]',
+      "Sua proposta: https://smartpay.valorasolucoes.com/proposta/abc123 — total R$ 35.000,00."
+    ]) (axios.post as jest.Mock).mockResolvedValueOnce({ data: { choices: [{ message: { content: t } }] } });
+    const r = await generateBotReply({
+      persona: "Ana, da Villa Aurora",
+      history: [],
+      userMessage: FRASE,
+      agora: AGORA,
+      provedores: [{ provider: "openrouter" as const, model: "m", apiKey: "k" }],
+      ferramentas: f
+    });
+    expect(axios.post).toHaveBeenCalledTimes(4);
+    expect(executar).toHaveBeenNthCalledWith(2, [
+      { nome: "GERAR_PROPOSTA", args: { data: "21/11/2026", extras: "Banda ao vivo, Open bar premium", observacao: "fogos de artifício" } }
+    ]);
+    expect(r?.text).toContain("/proposta/abc123");
   });
 });
