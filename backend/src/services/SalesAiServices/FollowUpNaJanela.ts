@@ -8,6 +8,7 @@ import { cacheLayer } from "../../libs/cache";
 import { generateBotReply } from "../../helpers/aiBot";
 import { separarTurnoAtual } from "../../helpers/aiBotTurn";
 import { ESPERA_FOLLOW_UP_1_MS, JANELA_MS, MAX_FOLLOW_UPS, proximoFollowUp } from "../../helpers/followUpNaJanela";
+import { soRespostaAutomatica } from "../../helpers/respostaAutomatica";
 import { logger } from "../../utils/logger";
 import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { CHANNEL } from "../CloudApiServices/CloudApiChannel";
@@ -76,6 +77,15 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   const ultima = await Message.findOne({ where: { ticketId: ticket.id }, order: [["createdAt", "DESC"]] });
   // Lead falou por último: ele espera resposta, não follow-up.
   if (!ultima || !ultima.fromMe) return false;
+  // Do outro lado só o robô da casa (boas-vindas, menu, horário): a Val já deixou
+  // o recado uma vez, como manda a playbook. Lembrete para robô não (11/11/2026).
+  const conversa = await Message.findAll({
+    where: { ticketId: ticket.id },
+    attributes: ["fromMe", "body", "createdAt"],
+    order: [["createdAt", "DESC"]],
+    limit: 30
+  });
+  if (soRespostaAutomatica(conversa)) return false;
   const numero = proximoFollowUp(
     { ultimaDoLead, ultimaNossa: new Date(ultima.createdAt), enviados: contagem.n, ultimoFollowUpEm: contagem.em },
     agora
