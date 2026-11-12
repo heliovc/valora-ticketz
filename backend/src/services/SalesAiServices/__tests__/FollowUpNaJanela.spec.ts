@@ -50,14 +50,15 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
     expect((generateBotReply as jest.Mock).mock.calls[0][0].userMessage).toContain("primeiro lembrete");
   });
 
-  it("sequência inteira: 1 às 16h05, 2 às 8h (o vencimento das 2h05 é madrugada), 3 às 13h", async () => {
+  it("sequência inteira: 1 às 16h05, 2 às 9h (o vencimento das 2h05 é fora do horário comercial), 3 às 13h", async () => {
     await varrerFollowUps(brt(10, 16, 5));
     expect(await varrerFollowUps(brt(10, 16, 15))).toBe(0); // a varredura seguinte não repete
     (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 16, 5) });
     expect(await varrerFollowUps(brt(11, 2, 10))).toBe(0);
-    expect(await varrerFollowUps(brt(11, 8, 0))).toBe(1);
+    expect(await varrerFollowUps(brt(11, 8, 0))).toBe(0);
+    expect(await varrerFollowUps(brt(11, 9, 0))).toBe(1);
     expect((generateBotReply as jest.Mock).mock.calls[1][0].userMessage).toContain("segundo lembrete");
-    (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 8) });
+    (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 9) });
     expect(await varrerFollowUps(brt(11, 12, 50))).toBe(0);
     expect(await varrerFollowUps(brt(11, 13, 0))).toBe(1);
     expect((generateBotReply as jest.Mock).mock.calls[2][0].userMessage).toContain("último lembrete");
@@ -66,12 +67,13 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
     expect(sendText).toHaveBeenCalledTimes(3);
   });
 
-  it("lead respondeu entre os follow-ups: volta ao 1", async () => {
+  it("lead respondeu entre os follow-ups: volta ao 1 (e o 1 que vence às 18h21 espera as 9h)", async () => {
     await varrerFollowUps(brt(10, 16, 5));
-    const respondeu = brt(10, 18);
+    const respondeu = brt(10, 16, 20);
     (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...ticket, lastInboundAt: respondeu }]);
-    (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 18, 1) });
-    expect(await varrerFollowUps(brt(10, 20, 5))).toBe(1);
+    (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 16, 21) });
+    expect(await varrerFollowUps(brt(10, 18, 25))).toBe(0);
+    expect(await varrerFollowUps(brt(11, 9, 0))).toBe(1);
     expect((generateBotReply as jest.Mock).mock.calls[1][0].userMessage).toContain("primeiro lembrete");
   });
 
@@ -117,11 +119,11 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
       (dentroDaJanela as jest.Mock).mockReturnValue(true);
     });
 
-    it("a mesma cadência: 2 às 8h, 3 às 13h, e nada depois de 24h do lead", async () => {
+    it("a mesma cadência: 2 às 9h, 3 às 13h, e nada depois de 24h do lead", async () => {
       await varrerFollowUps(brt(10, 16, 5));
       (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 16, 5) });
-      expect(await varrerFollowUps(brt(11, 8, 0))).toBe(1);
-      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 8) });
+      expect(await varrerFollowUps(brt(11, 9, 0))).toBe(1);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 9) });
       expect(await varrerFollowUps(brt(11, 13, 0))).toBe(1);
       (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 13) });
       expect(await varrerFollowUps(brt(11, 14, 30))).toBe(0);
@@ -130,9 +132,10 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
 
     it("lead respondeu no QR: a contagem volta ao 1 pela última mensagem dele", async () => {
       await varrerFollowUps(brt(10, 16, 5));
-      (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...doQr, lastClientMessageAt: brt(10, 18) }]);
-      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 18, 1) });
-      expect(await varrerFollowUps(brt(10, 20, 5))).toBe(1);
+      (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...doQr, lastClientMessageAt: brt(10, 16, 20) }]);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 16, 21) });
+      expect(await varrerFollowUps(brt(10, 18, 25))).toBe(0);
+      expect(await varrerFollowUps(brt(11, 9, 0))).toBe(1);
       expect((generateBotReply as jest.Mock).mock.calls[1][0].userMessage).toContain("primeiro lembrete");
     });
 

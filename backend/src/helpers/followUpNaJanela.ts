@@ -8,9 +8,11 @@
  *    se o follow-up 2 ficou sem resposta.
  *
  * O lead respondeu no meio: a contagem volta ao follow-up 1 (a janela e a
- * contagem são da última mensagem dele). Nunca entre 22h e 8h (Brasília): o
- * que vencer de madrugada sai às 8h — e só se a janela ainda estiver aberta,
- * porque fora dela só sairia modelo pago.
+ * contagem são da última mensagem dele). Só em horário comercial — segunda a
+ * sexta, das 9h às 18h de Brasília (Hélio, 12/11/2026: "follow-up precisamos
+ * respeitar o horário"; fora dele a Val só RESPONDE quando o lead escreve). O
+ * que vencer fora do horário sai na abertura seguinte — e só se a janela ainda
+ * estiver aberta, porque fora dela só sairia modelo pago.
  */
 export const JANELA_MS = 24 * 60 * 60 * 1000;
 export const ESPERA_FOLLOW_UP_1_MS = 2 * 60 * 60 * 1000;
@@ -22,8 +24,8 @@ export const INTERVALO_MINIMO_FOLLOW_UP_3_MS = 60 * 60 * 1000;
 /** Depois disto, perto demais do fim da janela para arriscar o envio. */
 export const MARGEM_DO_FIM_MS = 10 * 60 * 1000;
 export const MAX_FOLLOW_UPS = 3;
-/** Horário permitido em Brasília, em minutos do dia: 8h às 22h. */
-export const DIURNO = { inicio: 8 * 60, fim: 22 * 60 };
+/** Horário comercial em Brasília: segunda (1) a sexta (5), das 9h às 18h (minutos do dia). */
+export const HORARIO_COMERCIAL = { inicio: 9 * 60, fim: 18 * 60, dias: [1, 2, 3, 4, 5] };
 
 const PASSO_MS = 10 * 60 * 1000;
 
@@ -32,9 +34,15 @@ export function minutosEmBrasilia(d: Date): number {
   return brt.getUTCHours() * 60 + brt.getUTCMinutes();
 }
 
-export function ehDiurno(d: Date): boolean {
+/** Dia da semana em Brasília (0 = domingo). */
+export function diaDaSemanaEmBrasilia(d: Date): number {
+  return new Date(d.getTime() - 3 * 60 * 60 * 1000).getUTCDay();
+}
+
+export function ehHorarioComercial(d: Date): boolean {
+  if (!HORARIO_COMERCIAL.dias.includes(diaDaSemanaEmBrasilia(d))) return false;
   const m = minutosEmBrasilia(d);
-  return m >= DIURNO.inicio && m < DIURNO.fim;
+  return m >= HORARIO_COMERCIAL.inicio && m < HORARIO_COMERCIAL.fim;
 }
 
 export interface EstadoDoFollowUp {
@@ -49,9 +57,9 @@ export interface EstadoDoFollowUp {
 }
 
 /**
- * Horário-alvo do follow-up 3: 1 hora antes de a janela fechar; se cair entre
- * 22h e 8h, o último horário permitido antes disso (e pelo menos 1 hora depois
- * do 2). Sem horário permitido nesse intervalo, nulo: o 3 não sai.
+ * Horário-alvo do follow-up 3: 1 hora antes de a janela fechar; se cair fora do
+ * horário comercial, o último horário comercial antes disso (e pelo menos 1
+ * hora depois do 2). Sem horário comercial nesse intervalo, nulo: o 3 não sai.
  */
 export function alvoDoFollowUp3(ultimaDoLead: Date, ultimoFollowUpEm: Date): Date | null {
   const fim = ultimaDoLead.getTime() + JANELA_MS;
@@ -61,11 +69,11 @@ export function alvoDoFollowUp3(ultimaDoLead: Date, ultimoFollowUpEm: Date): Dat
   if (inicio > limite) return null;
   // O mais tarde possível até o ideal…
   for (let t = Math.min(ideal, limite); t >= inicio; t -= PASSO_MS) {
-    if (ehDiurno(new Date(t))) return new Date(t);
+    if (ehHorarioComercial(new Date(t))) return new Date(t);
   }
   // …ou, se antes do ideal não houver horário permitido, o primeiro depois dele.
   for (let t = Math.max(ideal, inicio); t <= limite; t += PASSO_MS) {
-    if (ehDiurno(new Date(t))) return new Date(t);
+    if (ehHorarioComercial(new Date(t))) return new Date(t);
   }
   return null;
 }
@@ -74,7 +82,7 @@ export function alvoDoFollowUp3(ultimaDoLead: Date, ultimoFollowUpEm: Date): Dat
 export function proximoFollowUp(e: EstadoDoFollowUp, agora: Date): 1 | 2 | 3 | null {
   const limite = e.ultimaDoLead.getTime() + JANELA_MS - MARGEM_DO_FIM_MS;
   const t = agora.getTime();
-  if (t >= limite || !ehDiurno(agora)) return null;
+  if (t >= limite || !ehHorarioComercial(agora)) return null;
   if (e.enviados <= 0) {
     return t >= e.ultimaNossa.getTime() + ESPERA_FOLLOW_UP_1_MS ? 1 : null;
   }

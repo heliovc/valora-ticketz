@@ -22,7 +22,8 @@ import { TRIAGEM, extrairMarcadoresDeVendas } from "./salesAiRules";
  * Follow-ups da Val no WhatsApp Oficial, dentro da janela de 24h (pedido do
  * Hélio em 10/11/2026: "precisam ser enviados antes da janela de 24 horas para
  * não pagarmos"). Até 3 por silêncio do lead — 2h depois da IA, 10h depois do
- * 1º e antes de a janela fechar —, nunca entre 22h e 8h. Regra em
+ * 1º e antes de a janela fechar —, só em horário comercial (seg a sex, 9h às
+ * 18h). Regra em
  * `helpers/followUpNaJanela.ts`.
  *
  * Vale para quem RESPONDEU e depois ficou em silêncio, com a nossa mensagem por
