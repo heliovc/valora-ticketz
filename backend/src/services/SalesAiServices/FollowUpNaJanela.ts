@@ -14,6 +14,7 @@ import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
 import { CHANNEL } from "../CloudApiServices/CloudApiChannel";
 import { dentroDaJanela, sendText } from "../CloudApiServices/CloudApiSendService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
+import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { decidir, escopoDeVendas, promptDeVendas } from "./SalesAiService";
 import { TRIAGEM, extrairMarcadoresDeVendas } from "./salesAiRules";
 
@@ -30,6 +31,19 @@ import { TRIAGEM, extrairMarcadoresDeVendas } from "./salesAiRules";
  * escreve, retomando o ponto em que a conversa parou.
  */
 const ETAPAS_SEM_FOLLOW_UP = new Set(["sem_interesse", "transferido"]);
+
+/**
+ * Conexão por QR (Baileys), o "funil principal". Pedido do Hélio em 12/11/2026:
+ * a Val ligada no card do QR faz os mesmos follow-ups do Oficial. Lá não há
+ * janela da Meta, mas a cadência é a mesma (2h, +10h, perto de 24h do lead).
+ */
+export const CANAL_QR = "whatsapp";
+
+/** Última mensagem do lead: no Oficial é a que abre a janela; no QR, a última que chegou. */
+export function ultimaDoLeadDe(ticket: Pick<Ticket, "channel" | "lastInboundAt" | "lastClientMessageAt">): Date | null {
+  const marca = ticket.channel === CHANNEL ? ticket.lastInboundAt : ticket.lastClientMessageAt;
+  return marca ? new Date(marca) : null;
+}
 const TRES_DIAS_S = 3 * 24 * 60 * 60;
 
 const TOM_DO_FOLLOW_UP: Record<1 | 2 | 3, string> = {
@@ -62,11 +76,13 @@ async function lerContagem(chave: string): Promise<{ n: number; em: Date | null 
 }
 
 async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean> {
-  if (!ticket.lastInboundAt) return false;
-  const ultimaDoLead = new Date(ticket.lastInboundAt);
+  const oficial = ticket.channel === CHANNEL;
+  const ultimaDoLead = ultimaDoLeadDe(ticket);
+  if (!ultimaDoLead) return false;
   if (ETAPAS_SEM_FOLLOW_UP.has(String(ticket.salesStage || ""))) return false;
   if (ticket.aiPausedUntil && new Date(ticket.aiPausedUntil) > agora) return false;
-  if (!dentroDaJanela(ticket)) return false;
+  // Só o Oficial tem janela da Meta; no QR, o limite de 24h vem de `proximoFollowUp`.
+  if (oficial && !dentroDaJanela(ticket)) return false;
 
   const chave = `followup:${ticket.id}:${ultimaDoLead.getTime()}`;
   const contagem = await lerContagem(chave);
@@ -110,7 +126,7 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
     contactName: contato.name,
     files: [],
     provedores: await provedoresDaEmpresa(ticket.companyId),
-    uso: { companyId: ticket.companyId, ticketId: ticket.id, origem: "follow_up", canal: "oficial" }
+    uso: { companyId: ticket.companyId, ticketId: ticket.id, origem: "follow_up", canal: oficial ? "oficial" : "qr" }
   });
   // Modelo fora ou pedido de passagem: no follow-up, melhor não mandar nada.
   if (!resposta || resposta.kind !== "reply") return false;
@@ -121,6 +137,12 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
 
   // Marca antes de enviar: duas varreduras nunca mandam o mesmo follow-up duas vezes.
   await cacheLayer.set(chave, JSON.stringify({ n: numero, em: agora.toISOString() }), "EX", TRES_DIAS_S);
+  if (!oficial) {
+    // QR: o Baileys grava a mensagem quando ela volta pelo listener, como a resposta da Val.
+    await SendWhatsAppMessage({ body: texto, ticket, sentBy: "ai" });
+    logger.info(`[val-follow-up] ticket ${ticket.id} (QR): follow-up ${numero} enviado após ${horas}h de silêncio do lead`);
+    return true;
+  }
   const { wamid } = await sendText(whatsapp, contato.number, texto);
   await CreateMessageService({
     messageData: {
@@ -140,18 +162,25 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   return true;
 }
 
-/** Uma varredura: conversas da Val no Oficial com a janela aberta e o lead calado há pelo menos 2h. */
+/**
+ * Uma varredura: conversas da Val no Oficial (janela aberta) e no QR, com o
+ * lead calado há pelo menos 2h e há menos de 24h.
+ */
 export async function varrerFollowUps(agora: Date = new Date()): Promise<number> {
+  const entre = {
+    [Op.between]: [new Date(agora.getTime() - JANELA_MS), new Date(agora.getTime() - ESPERA_FOLLOW_UP_1_MS)]
+  };
   const tickets = await Ticket.findAll({
     where: {
-      channel: CHANNEL,
       status: { [Op.in]: ["open", "pending"] },
       // Triagem fica fora: sem produto, não há playbook para o follow-up.
       salesSource: { [Op.ne]: null, [Op.notIn]: [TRIAGEM] },
       userId: null,
-      lastInboundAt: {
-        [Op.between]: [new Date(agora.getTime() - JANELA_MS), new Date(agora.getTime() - ESPERA_FOLLOW_UP_1_MS)]
-      }
+      isGroup: false,
+      [Op.or]: [
+        { channel: CHANNEL, lastInboundAt: entre },
+        { channel: CANAL_QR, lastClientMessageAt: entre }
+      ]
     } as any,
     limit: 300
   });

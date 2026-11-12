@@ -10,6 +10,7 @@ jest.mock("../../../helpers/aiBot", () => ({ __esModule: true, generateBotReply:
 jest.mock("../../AiBotServices/AiBotProvidersService", () => ({ __esModule: true, provedoresDaEmpresa: jest.fn().mockResolvedValue([{}]) }));
 jest.mock("../../CloudApiServices/CloudApiSendService", () => ({ __esModule: true, dentroDaJanela: jest.fn().mockReturnValue(true), sendText: jest.fn().mockResolvedValue({ wamid: "wamid.F" }) }));
 jest.mock("../../MessageServices/CreateMessageService", () => ({ __esModule: true, default: jest.fn() }));
+jest.mock("../../WbotServices/SendWhatsAppMessage", () => ({ __esModule: true, default: jest.fn() }));
 jest.mock("../SalesAiService", () => ({ __esModule: true, decidir: jest.fn().mockResolvedValue({ reply: true, reason: "ok" }), escopoDeVendas: jest.fn().mockResolvedValue({ enabled: true }), promptDeVendas: jest.fn().mockResolvedValue("p") }));
 
 import Ticket from "../../../models/Ticket";
@@ -19,13 +20,15 @@ import Whatsapp from "../../../models/Whatsapp";
 import { generateBotReply } from "../../../helpers/aiBot";
 import { sendText } from "../../CloudApiServices/CloudApiSendService";
 import CreateMessageService from "../../MessageServices/CreateMessageService";
+import SendWhatsAppMessage from "../../WbotServices/SendWhatsAppMessage";
+import { dentroDaJanela } from "../../CloudApiServices/CloudApiSendService";
 import { varrerFollowUps } from "../FollowUpNaJanela";
 
 // Lead falou 14h (BRT) de 10/11 e a IA respondeu 14h01.
 const ultimaDoLead = new Date(Date.UTC(2026, 10, 10, 17, 0));
 const respostaDaIa = new Date(Date.UTC(2026, 10, 10, 17, 1));
 const brt = (dia: number, h: number, m = 0) => new Date(Date.UTC(2026, 10, dia, h + 3, m));
-const ticket = { id: 2293, companyId: 2, contactId: 7, whatsappId: 13, salesSource: "elo_eventos", salesStage: "qualificado", lastInboundAt: ultimaDoLead, aiPausedUntil: null };
+const ticket = { id: 2293, companyId: 2, contactId: 7, whatsappId: 13, channel: "whatsapp_official", salesSource: "elo_eventos", salesStage: "qualificado", lastInboundAt: ultimaDoLead, aiPausedUntil: null };
 
 describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
   beforeEach(() => {
@@ -92,5 +95,56 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
   it("lead que recusou não recebe follow-up", async () => {
     (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...ticket, salesStage: "sem_interesse" }]);
     expect(await varrerFollowUps(brt(10, 16, 5))).toBe(0);
+  });
+
+  // Pedido do Hélio em 12/11/2026: a Val ligada no card do QR (funil principal) também faz follow-up.
+  describe("conexão por QR (funil principal)", () => {
+    // No QR o motor não grava lastInboundAt (é da janela do Oficial): vale lastClientMessageAt.
+    const doQr = { ...ticket, id: 2953, whatsappId: 8, channel: "whatsapp", lastInboundAt: null, lastClientMessageAt: ultimaDoLead };
+    beforeEach(() => {
+      (Ticket.findAll as jest.Mock).mockResolvedValue([doQr]);
+      (Whatsapp.findByPk as jest.Mock).mockResolvedValue({ id: 8 });
+    });
+
+    it("1 sai 2h depois da IA, pelo Baileys, marcado como mensagem da IA, sem passar pela janela da Meta", async () => {
+      (dentroDaJanela as jest.Mock).mockReturnValue(false);
+      expect(await varrerFollowUps(brt(10, 15, 50))).toBe(0);
+      expect(await varrerFollowUps(brt(10, 16, 5))).toBe(1);
+      expect(SendWhatsAppMessage).toHaveBeenCalledWith(expect.objectContaining({ ticket: doQr, sentBy: "ai", body: expect.stringContaining("Casa Grande") }));
+      expect(sendText).not.toHaveBeenCalled();
+      expect(CreateMessageService).not.toHaveBeenCalled();
+      expect((generateBotReply as jest.Mock).mock.calls[0][0].uso).toEqual(expect.objectContaining({ canal: "qr", origem: "follow_up" }));
+      (dentroDaJanela as jest.Mock).mockReturnValue(true);
+    });
+
+    it("a mesma cadência: 2 às 8h, 3 às 13h, e nada depois de 24h do lead", async () => {
+      await varrerFollowUps(brt(10, 16, 5));
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 16, 5) });
+      expect(await varrerFollowUps(brt(11, 8, 0))).toBe(1);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 8) });
+      expect(await varrerFollowUps(brt(11, 13, 0))).toBe(1);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 13) });
+      expect(await varrerFollowUps(brt(11, 14, 30))).toBe(0);
+      expect(SendWhatsAppMessage).toHaveBeenCalledTimes(3);
+    });
+
+    it("lead respondeu no QR: a contagem volta ao 1 pela última mensagem dele", async () => {
+      await varrerFollowUps(brt(10, 16, 5));
+      (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...doQr, lastClientMessageAt: brt(10, 18) }]);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 18, 1) });
+      expect(await varrerFollowUps(brt(10, 20, 5))).toBe(1);
+      expect((generateBotReply as jest.Mock).mock.calls[1][0].userMessage).toContain("primeiro lembrete");
+    });
+
+    it("a varredura busca QR por lastClientMessageAt e Oficial por lastInboundAt, sem grupos", async () => {
+      await varrerFollowUps(brt(10, 16, 5));
+      const where = (Ticket.findAll as jest.Mock).mock.calls[0][0].where;
+      expect(where.isGroup).toBe(false);
+      const ou = Object.getOwnPropertySymbols(where).map(k => where[k]).find(Array.isArray);
+      expect(ou).toEqual([
+        expect.objectContaining({ channel: "whatsapp_official", lastInboundAt: expect.anything() }),
+        expect.objectContaining({ channel: "whatsapp", lastClientMessageAt: expect.anything() })
+      ]);
+    });
   });
 });
