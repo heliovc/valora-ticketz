@@ -192,10 +192,15 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   if (!texto) return false;
   const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
   if (!whatsapp) return false;
+  // QR desconectado: não marca nem envia — a próxima varredura tenta de novo.
+  if (!oficial && whatsapp.status && whatsapp.status !== "CONNECTED") return false;
 
   // Marca antes de enviar: duas varreduras nunca mandam o mesmo follow-up duas vezes.
   await cacheLayer.set(chave, JSON.stringify({ n: numero, em: agora.toISOString() }), "EX", VALIDADE_DA_CONTAGEM_S);
   if (!oficial) {
+    // O envio pelo Baileys lê o número em `ticket.contact`, que a varredura não
+    // carrega (13/11/2026: o 2º lembrete do Claudio falhou com "reading 'number'").
+    ticket.contact = contato;
     // QR: o Baileys grava a mensagem quando ela volta pelo listener, como a resposta da Val.
     await SendWhatsAppMessage({ body: texto, ticket, sentBy: "ai" });
     logger.info(`[val-follow-up] ticket ${ticket.id} (QR): follow-up ${numero} enviado após ${horas}h de silêncio do lead`);

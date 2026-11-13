@@ -206,6 +206,20 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
       expect(instrucao).toContain("escrito à mão por alguém da equipe");
     });
 
+    it("o envio pelo Baileys recebe a conversa com o contato carregado (getJidOf lê ticket.contact.number)", async () => {
+      expect(await varrerFollowUps(brt(10, 16, 5))).toBe(1);
+      const enviado = (SendWhatsAppMessage as jest.Mock).mock.calls[0][0].ticket;
+      expect(enviado.contact).toEqual(expect.objectContaining({ number: "5521900004506" }));
+    });
+
+    it("QR desconectado: não marca nem envia; tenta de novo quando voltar", async () => {
+      (Whatsapp.findByPk as jest.Mock).mockResolvedValue({ id: 8, status: "DISCONNECTED" });
+      expect(await varrerFollowUps(brt(10, 16, 5))).toBe(0);
+      expect(SendWhatsAppMessage).not.toHaveBeenCalled();
+      (Whatsapp.findByPk as jest.Mock).mockResolvedValue({ id: 8, status: "CONNECTED" });
+      expect(await varrerFollowUps(brt(10, 16, 15))).toBe(1);
+    });
+
     it("conversa parada há dias sem nenhum lembrete: não começa a sequência atrasada", async () => {
       (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...doQr, lastClientMessageAt: brt(5, 17, 9) }]);
       (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(5, 17, 9) });
