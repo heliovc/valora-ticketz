@@ -139,7 +139,34 @@ export function tabelaDoProduto(
   return { url, nome: /\.pdf$/i.test(nome) ? nome : `${nome}.pdf` };
 }
 
-const CAMPOS_DO_PRODUTO = ["videoUrl", "videoLegenda", "tabelaUrl", "tabelaNome"] as const;
+/**
+ * Material que vai por e-mail quando o lead pede (Hélio, 13/11/2026, caso
+ * Tropical Festas): a apresentação do produto; sem ela, a tabela em PDF.
+ */
+export function materialPorEmailDoProduto(
+  produtos: Record<string, unknown> | null | undefined,
+  produto: ProdutoDeVendas
+): TabelaDoProduto | null {
+  const dados = (produtos?.[produto] ?? null) as { apresentacaoUrl?: unknown; apresentacaoNome?: unknown } | null;
+  const url = String(dados?.apresentacaoUrl ?? "").trim();
+  if (/^https:\/\/\S+$/i.test(url)) {
+    const nome = String(dados?.apresentacaoNome ?? "").trim() || "apresentacao.pdf";
+    return { url, nome: /\.pdf$/i.test(nome) ? nome : `${nome}.pdf` };
+  }
+  return tabelaDoProduto(produtos, produto);
+}
+
+/** E-mail que o lead passou, como a IA escreveu no marcador: sem espaços, minúsculo, ou nulo. */
+export function emailDoMarcador(bruto: string): string | null {
+  const v = String(bruto || "")
+    .replace(/^\s*["']|["']\s*$/g, "")
+    .replace(/^mailto:/i, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+  return /^[^@\s"'<>]+@[^@\s"'<>]+\.[a-z]{2,}$/i.test(v) && v.length <= 120 ? v : null;
+}
+
+const CAMPOS_DO_PRODUTO = ["videoUrl", "videoLegenda", "tabelaUrl", "tabelaNome", "apresentacaoUrl", "apresentacaoNome"] as const;
 
 /**
  * Junta os ajustes por produto que chegaram do painel com os que já estavam
@@ -166,6 +193,8 @@ export function mesclarAjustesDeProdutos(
     if (String(atual.videoLegenda ?? "").length > 1000) throw new Error("A legenda do vídeo passou de 1000 caracteres.");
     if (!https(atual.tabelaUrl)) throw new Error("A tabela precisa de um endereço https.");
     if (String(atual.tabelaNome ?? "").length > 120) throw new Error("O nome do arquivo da tabela passou de 120 caracteres.");
+    if (!https(atual.apresentacaoUrl)) throw new Error("A apresentação precisa de um endereço https.");
+    if (String(atual.apresentacaoNome ?? "").length > 120) throw new Error("O nome do arquivo da apresentação passou de 120 caracteres.");
     saida[produto] = atual;
   }
   return saida;
@@ -484,6 +513,8 @@ export function extrairMarcadoresDeVendas(texto: string): {
   tabela: boolean;
   /** O lead indicou outra pessoa (ou outro número dele): vira card novo, não transferência. */
   indicacao: IndicacaoDoLead | null;
+  /** O lead passou um e-mail ou pediu o material por e-mail: a apresentação vai para este endereço. */
+  email: string | null;
 } {
   let etapa: EtapaDeVendas | null = null;
   let resumo: string | null = null;
@@ -491,7 +522,12 @@ export function extrairMarcadoresDeVendas(texto: string): {
   let video = false;
   let tabela = false;
   let indicacao: IndicacaoDoLead | null = null;
+  let email: string | null = null;
   const limpo = String(texto || "")
+    .replace(/\[\[\s*E-?MAIL\s*[=:]\s*([^\]]{3,160})\]\]/gi, (_, v: string) => {
+      email = email || emailDoMarcador(v);
+      return "";
+    })
     .replace(/\[\[\s*INDICA[CÇ][AÃ]O\b([^\]]*)\]\]/gi, (_, attrs: string) => {
       indicacao = indicacao || lerIndicacao(attrs);
       return "";
@@ -537,7 +573,7 @@ export function extrairMarcadoresDeVendas(texto: string): {
   }
   if (etapa === "transferido") transferir = true;
   if (transferir) etapa = "transferido";
-  return { texto: limpo, etapa, etapaPedida, resumo, transferir, video, tabela, indicacao };
+  return { texto: limpo, etapa, etapaPedida, resumo, transferir, video, tabela, indicacao, email };
 }
 
 // ── Valores iniciais (seed, editáveis no painel) ────────────────────────────

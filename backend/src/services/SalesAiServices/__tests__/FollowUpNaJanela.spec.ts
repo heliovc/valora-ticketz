@@ -11,6 +11,7 @@ jest.mock("../../AiBotServices/AiBotProvidersService", () => ({ __esModule: true
 jest.mock("../../CloudApiServices/CloudApiSendService", () => ({ __esModule: true, dentroDaJanela: jest.fn().mockReturnValue(true), sendText: jest.fn().mockResolvedValue({ wamid: "wamid.F" }) }));
 jest.mock("../../MessageServices/CreateMessageService", () => ({ __esModule: true, default: jest.fn() }));
 jest.mock("../../WbotServices/SendWhatsAppMessage", () => ({ __esModule: true, default: jest.fn() }));
+jest.mock("../MaterialPorEmail", () => ({ __esModule: true, seguePorEmail: jest.fn(async (id: number) => cache.has(`material-email:${id}`)) }));
 jest.mock("../SalesAiService", () => ({ __esModule: true, decidir: jest.fn().mockResolvedValue({ reply: true, reason: "ok" }), escopoDeVendas: jest.fn().mockResolvedValue({ enabled: true }), promptDeVendas: jest.fn().mockResolvedValue("p") }));
 
 import Ticket from "../../../models/Ticket";
@@ -92,6 +93,12 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
     (generateBotReply as jest.Mock).mockResolvedValue({ kind: "handoff", text: "vou chamar" });
     expect(await varrerFollowUps(brt(10, 16, 5))).toBe(0);
     expect(sendText).not.toHaveBeenCalled();
+  });
+
+  it("lead pediu para seguir por e-mail (apresentação já enviada): sem lembrete pelo WhatsApp", async () => {
+    cache.set(`material-email:${ticket.id}`, JSON.stringify({ email: "a@b.com" }));
+    expect(await varrerFollowUps(brt(10, 16, 5))).toBe(0);
+    expect(generateBotReply).not.toHaveBeenCalled();
   });
 
   it("lead que recusou não recebe follow-up", async () => {

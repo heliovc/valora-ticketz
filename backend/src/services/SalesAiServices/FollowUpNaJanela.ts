@@ -26,6 +26,7 @@ import { dentroDaJanela, sendText } from "../CloudApiServices/CloudApiSendServic
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { decidir, escopoDeVendas, promptDeVendas } from "./SalesAiService";
+import { seguePorEmail } from "./MaterialPorEmail";
 import { TRIAGEM, extrairMarcadoresDeVendas } from "./salesAiRules";
 
 /**
@@ -99,7 +100,7 @@ export function instrucaoDoFollowUp(numero: NumeroDoFollowUp, horas: number, fei
   return [
     `[SISTEMA] O lead não responde à nossa última mensagem há cerca de ${tempoDeSilencio(horas)}.`,
     jaFeitos,
-    "ANTES de escrever, leia a conversa inteira. Se não couber lembrete agora — o lead disse que vai pensar ou que retorna depois, pediu um prazo, recusou, já tem reunião ou demonstração marcada, está negociando valores com a equipe, ou a conversa foi encerrada —, responda APENAS [[SEM_FOLLOW_UP]].",
+    "ANTES de escrever, leia a conversa inteira. Se não couber lembrete agora — o lead disse que vai pensar ou que retorna depois, pediu um prazo, pediu para seguir por e-mail ou passou um e-mail, recusou, já tem reunião ou demonstração marcada, está negociando valores com a equipe, ou a conversa foi encerrada —, responda APENAS [[SEM_FOLLOW_UP]].",
     `Se couber, escreva UMA mensagem curta de follow-up (no máximo 2 linhas), natural e educada. ${tomDoFollowUp(numero, qr)}`,
     "Não repita mensagens anteriores, não pressione, não cite nome de ninguém da Valora, não use ferramentas nem marcadores (exceto [[SEM_FOLLOW_UP]]), e não diga que é uma mensagem automática."
   ].join(" ");
@@ -126,6 +127,8 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   if (!ultimaDoLead) return false;
   if (ETAPAS_SEM_FOLLOW_UP.has(String(ticket.salesStage || ""))) return false;
   if (ticket.aiPausedUntil && new Date(ticket.aiPausedUntil) > agora) return false;
+  // O lead pediu para seguir por e-mail e a apresentação já foi: sem lembrete aqui.
+  if (await seguePorEmail(ticket.id)) return false;
   // Só o Oficial tem janela da Meta; o QR segue a cadência longa de `proximoFollowUpQr`.
   if (oficial && !dentroDaJanela(ticket)) return false;
 

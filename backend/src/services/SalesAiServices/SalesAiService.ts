@@ -16,6 +16,7 @@ import {
 } from "../../models/SalesAi";
 import { notificarValoraPorEmail } from "../TagServices/notificarValora";
 import { logger } from "../../utils/logger";
+import { enviarMaterialPorEmail } from "./MaterialPorEmail";
 import {
   CODIGOS_PADRAO,
   CONFIG_PADRAO,
@@ -394,6 +395,13 @@ export async function aplicarResposta(
       m.indicacao.proprio ? transferirComMotivo : undefined
     );
     if (!r.ok) await transferirComMotivo(r.motivo || "não foi possível abrir o card novo");
+  }
+  // Lead passou o e-mail: a apresentação sai por e-mail (uma vez) e os
+  // lembretes pelo WhatsApp param. Não segura a resposta da Val.
+  if (m.email) {
+    void enviarMaterialPorEmail(ticket, contact, cfg, m.email).catch(err =>
+      logger.error({ err: err?.message, ticketId: ticket.id }, "[val-vendas] material por e-mail falhou")
+    );
   }
   // Sem interesse = perdido; demo ou teste aceitos = fechado. Dispara o gatilho
   // do resultado em Automações (mover para "Perdido", desligar a Val...).

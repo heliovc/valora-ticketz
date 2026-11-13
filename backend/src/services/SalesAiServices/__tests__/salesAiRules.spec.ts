@@ -176,7 +176,7 @@ describe("horário e marcadores", () => {
   });
   it("tira ETAPA, RESUMO e TRANSFERIR do texto", () => {
     const r = extrairMarcadoresDeVendas("Perfeito, vou chamar o Hélio!\n[[ETAPA=demo_solicitada]]\n[[RESUMO=Ana, buffet em Niterói, quer demo]]");
-    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false, video: false, tabela: false, indicacao: null });
+    expect(r).toEqual({ texto: "Perfeito, vou chamar o Hélio!", etapa: "demo_solicitada", etapaPedida: "demo_solicitada", resumo: "Ana, buffet em Niterói, quer demo", transferir: false, video: false, tabela: false, indicacao: null, email: null });
     const demoETransferir = extrairMarcadoresDeVendas("Vou chamar o Helio. [[ETAPA=demo_solicitada]] [[TRANSFERIR]]");
     expect(demoETransferir.transferir).toBe(true);
     expect(demoETransferir.etapaPedida).toBe("demo_solicitada");
