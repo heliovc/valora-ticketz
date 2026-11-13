@@ -96,3 +96,54 @@ export function proximoFollowUp(e: EstadoDoFollowUp, agora: Date): 1 | 2 | 3 | n
   }
   return null;
 }
+
+/**
+ * Mensagens nossas separadas por pelo menos isto contam como toques diferentes
+ * (a resposta ao lead e, depois, cada lembrete). Mensagens em sequência curta
+ * são um toque só.
+ */
+export const INTERVALO_ENTRE_TOQUES_MS = 30 * 60 * 1000;
+
+export interface MensagemParaContar {
+  fromMe: boolean;
+  createdAt?: Date | string | null;
+  /** "ai" = a Val; "humano" = digitada no celular; nulo/outro = equipe pelo CRM ou automação. */
+  sentBy?: string | null;
+}
+
+export interface FollowUpsJaFeitos {
+  /** Lembretes nossos depois da resposta ao lead — da Val ou escritos à mão. */
+  quantos: number;
+  /** Última mensagem do último lembrete (nulo se nenhum). */
+  ultimoEm: Date | null;
+  /** O último lembrete teve mensagem que não foi da Val (alguém da equipe escreveu). */
+  ultimoPelaEquipe: boolean;
+}
+
+/**
+ * Follow-ups que JÁ saíram neste silêncio, lendo as mensagens — não só a
+ * contagem da Val. Pedido do Hélio em 12/11/2026: "posso ter feito de forma
+ * manual; a IA precisa ler as mensagens antes de tomar uma ação". O primeiro
+ * bloco nosso depois da última mensagem do lead é a resposta a ele; cada bloco
+ * seguinte é um lembrete, de quem quer que tenha escrito.
+ */
+export function followUpsJaFeitos(mensagens: MensagemParaContar[], ultimaDoLead: Date): FollowUpsJaFeitos {
+  const corte = ultimaDoLead.getTime();
+  const nossas = mensagens
+    .filter(m => m.fromMe && m.createdAt)
+    .map(m => ({ t: new Date(m.createdAt as Date | string).getTime(), daVal: m.sentBy === "ai" }))
+    .filter(m => Number.isFinite(m.t) && m.t > corte)
+    .sort((a, b) => a.t - b.t);
+  const blocos: { fim: number; pelaEquipe: boolean }[] = [];
+  for (const m of nossas) {
+    const atual = blocos[blocos.length - 1];
+    if (!atual || m.t - atual.fim >= INTERVALO_ENTRE_TOQUES_MS) blocos.push({ fim: m.t, pelaEquipe: !m.daVal });
+    else {
+      atual.fim = m.t;
+      atual.pelaEquipe = atual.pelaEquipe || !m.daVal;
+    }
+  }
+  const quantos = Math.max(0, blocos.length - 1);
+  const ultimo = quantos > 0 ? blocos[blocos.length - 1] : null;
+  return { quantos, ultimoEm: ultimo ? new Date(ultimo.fim) : null, ultimoPelaEquipe: !!ultimo?.pelaEquipe };
+}

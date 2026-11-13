@@ -7,7 +7,14 @@ import Whatsapp from "../../models/Whatsapp";
 import { cacheLayer } from "../../libs/cache";
 import { generateBotReply } from "../../helpers/aiBot";
 import { separarTurnoAtual } from "../../helpers/aiBotTurn";
-import { ESPERA_FOLLOW_UP_1_MS, JANELA_MS, MAX_FOLLOW_UPS, proximoFollowUp } from "../../helpers/followUpNaJanela";
+import {
+  ESPERA_FOLLOW_UP_1_MS,
+  FollowUpsJaFeitos,
+  JANELA_MS,
+  MAX_FOLLOW_UPS,
+  followUpsJaFeitos,
+  proximoFollowUp
+} from "../../helpers/followUpNaJanela";
 import { soRespostaAutomatica } from "../../helpers/respostaAutomatica";
 import { logger } from "../../utils/logger";
 import { provedoresDaEmpresa } from "../AiBotServices/AiBotProvidersService";
@@ -30,6 +37,11 @@ import { TRIAGEM, extrairMarcadoresDeVendas } from "./salesAiRules";
  * último. Quem nunca respondeu não tem janela aberta: só sairia modelo pago, e
  * a abertura já foi. O lead respondeu no meio: volta ao 1. A própria Val
  * escreve, retomando o ponto em que a conversa parou.
+ *
+ * Lembrete escrito à mão pela equipe conta como follow-up feito, e a Val lê a
+ * conversa antes de cada um: se não couber (o lead pediu prazo, recusou,
+ * negocia com a equipe…), ela responde [[SEM_FOLLOW_UP]] e não manda nada
+ * (Hélio, 12/11/2026).
  */
 const ETAPAS_SEM_FOLLOW_UP = new Set(["sem_interesse", "transferido"]);
 
@@ -53,11 +65,20 @@ const TOM_DO_FOLLOW_UP: Record<1 | 2 | 3, string> = {
   3: "É o último lembrete: diga em tom leve que fica à disposição e deixe uma pergunta simples para ele retomar quando quiser."
 };
 
-export function instrucaoDoFollowUp(numero: 1 | 2 | 3, horas: number): string {
+/** A IA leu a conversa e concluiu que não cabe lembrete agora. */
+export const SEM_FOLLOW_UP = /\[\[\s*SEM[_ ]FOLLOW[_ -]?UP\s*\]\]/i;
+
+export function instrucaoDoFollowUp(numero: 1 | 2 | 3, horas: number, feitos?: FollowUpsJaFeitos): string {
+  const jaFeitos =
+    feitos && feitos.quantos > 0
+      ? `Desde a última mensagem do lead já saiu${feitos.quantos > 1 ? "ram" : ""} ${feitos.quantos} lembrete${feitos.quantos > 1 ? "s" : ""} nosso${feitos.quantos > 1 ? "s" : ""}${feitos.ultimoPelaEquipe ? ", o último escrito à mão por alguém da equipe" : ""}. Algumas mensagens "suas" no histórico podem ter sido escritas pela equipe: trate-as como suas e não repita o que já foi dito.`
+      : 'Algumas mensagens "suas" no histórico podem ter sido escritas à mão pela equipe: trate-as como suas e não repita o que já foi dito.';
   return [
-    `[SISTEMA] O lead não responde à sua última mensagem há cerca de ${horas} hora${horas === 1 ? "" : "s"}.`,
-    `Escreva UMA mensagem curta de follow-up (no máximo 2 linhas), natural e educada. ${TOM_DO_FOLLOW_UP[numero]}`,
-    "Não repita mensagens anteriores, não pressione, não cite nome de ninguém da Valora, não use ferramentas nem marcadores, e não diga que é uma mensagem automática."
+    `[SISTEMA] O lead não responde à nossa última mensagem há cerca de ${horas} hora${horas === 1 ? "" : "s"}.`,
+    jaFeitos,
+    "ANTES de escrever, leia a conversa inteira. Se não couber lembrete agora — o lead disse que vai pensar ou que retorna depois, pediu um prazo, recusou, já tem reunião ou demonstração marcada, está negociando valores com a equipe, ou a conversa foi encerrada —, responda APENAS [[SEM_FOLLOW_UP]].",
+    `Se couber, escreva UMA mensagem curta de follow-up (no máximo 2 linhas), natural e educada. ${TOM_DO_FOLLOW_UP[numero]}`,
+    "Não repita mensagens anteriores, não pressione, não cite nome de ninguém da Valora, não use ferramentas nem marcadores (exceto [[SEM_FOLLOW_UP]]), e não diga que é uma mensagem automática."
   ].join(" ");
 }
 
@@ -98,13 +119,20 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   // o recado uma vez, como manda a playbook. Lembrete para robô não (11/11/2026).
   const conversa = await Message.findAll({
     where: { ticketId: ticket.id },
-    attributes: ["fromMe", "body", "createdAt"],
+    attributes: ["fromMe", "body", "createdAt", "sentBy"],
     order: [["createdAt", "DESC"]],
     limit: 30
   });
   if (soRespostaAutomatica(conversa)) return false;
+  // Lembretes que já saíram neste silêncio, inclusive os escritos à mão pela
+  // equipe (Hélio, 12/11/2026): a contagem da Val sozinha não sabe deles.
+  const feitos = followUpsJaFeitos(conversa as any, ultimaDoLead);
+  const enviados = Math.max(contagem.n, feitos.quantos);
+  if (enviados >= MAX_FOLLOW_UPS) return false;
+  const ultimoFollowUpEm =
+    [contagem.em, feitos.ultimoEm].filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0] || null;
   const numero = proximoFollowUp(
-    { ultimaDoLead, ultimaNossa: new Date(ultima.createdAt), enviados: contagem.n, ultimoFollowUpEm: contagem.em },
+    { ultimaDoLead, ultimaNossa: new Date(ultima.createdAt), enviados, ultimoFollowUpEm },
     agora
   );
   if (!numero) return false;
@@ -123,7 +151,7 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
     persona: await promptDeVendas(cfg, ticket.salesSource, ticket.contactId),
     knowledge: "",
     history,
-    userMessage: instrucaoDoFollowUp(numero, horas),
+    userMessage: instrucaoDoFollowUp(numero, horas, feitos),
     contactName: contato.name,
     files: [],
     provedores: await provedoresDaEmpresa(ticket.companyId),
@@ -131,6 +159,13 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   });
   // Modelo fora ou pedido de passagem: no follow-up, melhor não mandar nada.
   if (!resposta || resposta.kind !== "reply") return false;
+  // Leu a conversa e viu que não cabe lembrete: encerra este silêncio sem mandar
+  // nada (e sem perguntar de novo ao modelo a cada varredura).
+  if (SEM_FOLLOW_UP.test(resposta.text || "")) {
+    await cacheLayer.set(chave, JSON.stringify({ n: MAX_FOLLOW_UPS, em: agora.toISOString() }), "EX", TRES_DIAS_S);
+    logger.info(`[val-follow-up] ticket ${ticket.id}: a IA leu a conversa e decidiu não mandar o follow-up ${numero}`);
+    return false;
+  }
   const texto = extrairMarcadoresDeVendas(resposta.text).texto;
   if (!texto) return false;
   const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);

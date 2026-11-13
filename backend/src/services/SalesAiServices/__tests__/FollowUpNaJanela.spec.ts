@@ -99,6 +99,56 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
     expect(await varrerFollowUps(brt(10, 16, 5))).toBe(0);
   });
 
+  // Hélio, 12/11/2026: o follow-up pode ter sido feito à mão — a Val lê a conversa antes.
+  describe("follow-up feito à mão pela equipe", () => {
+    const manual = brt(10, 14, 40);
+    beforeEach(() => {
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: manual });
+      (Message.findAll as jest.Mock).mockResolvedValue([
+        { fromMe: true, sentBy: "humano", body: "Oi! Conseguiu olhar a proposta?", createdAt: manual },
+        { fromMe: true, sentBy: "ai", body: "Que bom! ...", createdAt: respostaDaIa },
+        { fromMe: false, body: "Quero conhecer", createdAt: ultimaDoLead }
+      ]);
+    });
+
+    it("conta como o 1: a Val não manda outro 1 duas horas depois do manual; o 2 vence 10h depois (0h40 → sai às 9h)", async () => {
+      expect(await varrerFollowUps(brt(10, 16, 45))).toBe(0);
+      expect(await varrerFollowUps(brt(10, 17, 50))).toBe(0);
+      expect(generateBotReply).not.toHaveBeenCalled();
+      expect(await varrerFollowUps(brt(11, 9, 0))).toBe(1);
+      expect((generateBotReply as jest.Mock).mock.calls[0][0].userMessage).toContain("segundo lembrete");
+    });
+
+    it("a instrução diz à Val que a equipe já mandou lembrete e pede que leia a conversa", async () => {
+      expect(await varrerFollowUps(brt(11, 9, 0))).toBe(1);
+      const instrucao = (generateBotReply as jest.Mock).mock.calls[0][0].userMessage as string;
+      expect(instrucao).toContain("segundo lembrete");
+      expect(instrucao).toContain("escrito à mão por alguém da equipe");
+      expect(instrucao).toContain("leia a conversa inteira");
+    });
+
+    it("três lembretes já feitos (Val + equipe): não manda mais nada", async () => {
+      (Message.findAll as jest.Mock).mockResolvedValue([
+        { fromMe: true, sentBy: "humano", body: "c", createdAt: brt(11, 9) },
+        { fromMe: true, sentBy: "ai", body: "b", createdAt: brt(10, 20) },
+        { fromMe: true, sentBy: "humano", body: "a", createdAt: manual },
+        { fromMe: true, sentBy: "ai", body: "Que bom! ...", createdAt: respostaDaIa },
+        { fromMe: false, body: "Quero conhecer", createdAt: ultimaDoLead }
+      ]);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 9) });
+      expect(await varrerFollowUps(brt(11, 13, 0))).toBe(0);
+      expect(generateBotReply).not.toHaveBeenCalled();
+    });
+
+    it("a Val leu e viu que não cabe lembrete ([[SEM_FOLLOW_UP]]): não manda e não pergunta de novo", async () => {
+      (generateBotReply as jest.Mock).mockResolvedValue({ kind: "reply", text: "[[SEM_FOLLOW_UP]]" });
+      expect(await varrerFollowUps(brt(11, 9, 0))).toBe(0);
+      expect(sendText).not.toHaveBeenCalled();
+      expect(await varrerFollowUps(brt(11, 13, 0))).toBe(0);
+      expect(generateBotReply).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // Pedido do Hélio em 12/11/2026: a Val ligada no card do QR (funil principal) também faz follow-up.
   describe("conexão por QR (funil principal)", () => {
     // No QR o motor não grava lastInboundAt (é da janela do Oficial): vale lastClientMessageAt.

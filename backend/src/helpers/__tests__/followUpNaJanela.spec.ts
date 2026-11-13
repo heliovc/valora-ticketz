@@ -1,4 +1,4 @@
-import { alvoDoFollowUp3, ehHorarioComercial, proximoFollowUp } from "../followUpNaJanela";
+import { alvoDoFollowUp3, ehHorarioComercial, followUpsJaFeitos, proximoFollowUp } from "../followUpNaJanela";
 
 // Horários em Brasília (UTC-3) escritos em UTC. Novembro/2026: 10 = terça, 13 = sexta, 14 = sábado.
 const brt = (dia: number, h: number, m = 0) => new Date(Date.UTC(2026, 10, dia, h + 3, m));
@@ -66,5 +66,32 @@ describe("follow-ups 1, 2 e 3 dentro da janela de 24h (regra de 10/11/2026)", ()
     const sexta = { ultimaDoLead: brt(13, 17), ultimaNossa: brt(13, 17, 1), enviados: 0, ultimoFollowUpEm: null };
     expect(proximoFollowUp(sexta, brt(13, 19, 5))).toBeNull(); // sexta depois das 18h
     expect(proximoFollowUp(sexta, brt(14, 10))).toBeNull(); // sábado
+  });
+});
+
+// Hélio, 12/11/2026: "posso ter feito de forma manual; a IA precisa ler as mensagens antes".
+describe("follow-ups já feitos, lidos nas mensagens (inclusive os escritos à mão)", () => {
+  const lead = brt(11, 17);
+  const msg = (h: number, m: number, sentBy: string | null, fromMe = true) => ({ fromMe, sentBy, createdAt: brt(11, h, m) });
+
+  it("só a resposta ao lead (mesmo em várias mensagens seguidas): nenhum lembrete", () => {
+    expect(followUpsJaFeitos([msg(17, 1, "ai"), msg(17, 2, "ai")], lead)).toEqual({ quantos: 0, ultimoEm: null, ultimoPelaEquipe: false });
+  });
+
+  it("lembrete escrito à mão no dia seguinte conta como follow-up feito pela equipe", () => {
+    const r = followUpsJaFeitos([msg(17, 1, "ai"), { fromMe: true, sentBy: null, createdAt: brt(12, 9, 4) }], lead);
+    expect(r).toEqual({ quantos: 1, ultimoEm: brt(12, 9, 4), ultimoPelaEquipe: true });
+  });
+
+  it("lembretes da Val e da equipe somam; mensagens antes da última do lead não contam", () => {
+    const r = followUpsJaFeitos(
+      [msg(10, 0, "humano"), msg(16, 59, null, false), msg(17, 1, "ai"), msg(19, 1, "ai"), msg(21, 0, "humano"), msg(21, 5, "humano")],
+      lead
+    );
+    expect(r).toEqual({ quantos: 2, ultimoEm: brt(11, 21, 5), ultimoPelaEquipe: true });
+  });
+
+  it("mensagem sem data (fixture antiga) é ignorada", () => {
+    expect(followUpsJaFeitos([{ fromMe: true }, msg(17, 1, "ai")], lead).quantos).toBe(0);
   });
 });
