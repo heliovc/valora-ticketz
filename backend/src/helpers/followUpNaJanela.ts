@@ -147,3 +147,59 @@ export function followUpsJaFeitos(mensagens: MensagemParaContar[], ultimaDoLead:
   const ultimo = quantos > 0 ? blocos[blocos.length - 1] : null;
   return { quantos, ultimoEm: ultimo ? new Date(ultimo.fim) : null, ultimoPelaEquipe: !!ultimo?.pelaEquipe };
 }
+
+/**
+ * Cadência no QR (número sem API oficial). Pedido do Hélio em 13/11/2026, caso
+ * Claudio: no QR não há janela paga da Meta, então os lembretes se espalham por
+ * cerca de duas semanas em vez de parar em 24h:
+ *
+ * 1. 2 horas depois da nossa última mensagem;
+ * 2. no dia útil seguinte ao 1 (mesma hora);
+ * 3. 3 dias úteis depois do 2;
+ * 4. uma semana depois do 3 — o último, em tom de "fico à disposição".
+ *
+ * Sempre em horário comercial. O lead respondeu: volta ao 1.
+ */
+export const MAX_FOLLOW_UPS_QR = 4;
+export const DIAS_UTEIS_ATE_O_2_QR = 1;
+export const DIAS_UTEIS_ATE_O_3_QR = 3;
+export const DIAS_ATE_O_4_QR = 7;
+/** Silêncio do lead mais antigo que isto não entra na varredura do QR. */
+export const HORIZONTE_QR_MS = 21 * 24 * 60 * 60 * 1000;
+/**
+ * O 1 só sai se a nossa última mensagem for recente (cobre o fim de semana).
+ * Evita "primeiro lembrete" dias depois em conversa parada — por exemplo, na
+ * subida desta regra.
+ */
+export const ATRASO_MAXIMO_DO_1_QR_MS = 3 * 24 * 60 * 60 * 1000;
+
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+/** Soma dias úteis (seg a sex, em Brasília), mantendo a hora. */
+export function somarDiasUteis(d: Date, dias: number): Date {
+  let t = d.getTime();
+  let contados = 0;
+  while (contados < dias) {
+    t += DIA_MS;
+    const dia = diaDaSemanaEmBrasilia(new Date(t));
+    if (dia >= 1 && dia <= 5) contados += 1;
+  }
+  return new Date(t);
+}
+
+/** Qual follow-up sai agora no QR (1 a 4), ou nulo. */
+export function proximoFollowUpQr(e: EstadoDoFollowUp, agora: Date): 1 | 2 | 3 | 4 | null {
+  const t = agora.getTime();
+  if (!ehHorarioComercial(agora)) return null;
+  if (t > e.ultimaDoLead.getTime() + HORIZONTE_QR_MS) return null;
+  if (e.enviados <= 0) {
+    const desde = t - e.ultimaNossa.getTime();
+    return desde >= ESPERA_FOLLOW_UP_1_MS && desde <= ATRASO_MAXIMO_DO_1_QR_MS ? 1 : null;
+  }
+  if (!e.ultimoFollowUpEm) return null;
+  const ultimo = e.ultimoFollowUpEm;
+  if (e.enviados === 1) return t >= somarDiasUteis(ultimo, DIAS_UTEIS_ATE_O_2_QR).getTime() ? 2 : null;
+  if (e.enviados === 2) return t >= somarDiasUteis(ultimo, DIAS_UTEIS_ATE_O_3_QR).getTime() ? 3 : null;
+  if (e.enviados === 3) return t >= ultimo.getTime() + DIAS_ATE_O_4_QR * DIA_MS ? 4 : null;
+  return null;
+}

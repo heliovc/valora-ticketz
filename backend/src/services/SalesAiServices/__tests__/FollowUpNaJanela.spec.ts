@@ -169,15 +169,48 @@ describe("follow-ups da Val dentro da janela (1, 2 e 3)", () => {
       (dentroDaJanela as jest.Mock).mockReturnValue(true);
     });
 
-    it("a mesma cadência: 2 às 9h, 3 às 13h, e nada depois de 24h do lead", async () => {
-      await varrerFollowUps(brt(10, 16, 5));
+    it("cadência longa: 1 às 16h05, 2 no dia útil seguinte, 3 três dias úteis depois, 4 uma semana depois", async () => {
+      expect(await varrerFollowUps(brt(10, 16, 5))).toBe(1);
       (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(10, 16, 5) });
-      expect(await varrerFollowUps(brt(11, 9, 0))).toBe(1);
-      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 9) });
-      expect(await varrerFollowUps(brt(11, 13, 0))).toBe(1);
-      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 13) });
-      expect(await varrerFollowUps(brt(11, 14, 30))).toBe(0);
-      expect(SendWhatsAppMessage).toHaveBeenCalledTimes(3);
+      expect(await varrerFollowUps(brt(11, 9, 0))).toBe(0); // no Oficial seria o 2; no QR espera o dia útil seguinte
+      expect(await varrerFollowUps(brt(11, 16, 10))).toBe(1);
+      expect((generateBotReply as jest.Mock).mock.calls[1][0].userMessage).toContain("segundo lembrete");
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(11, 16, 10) });
+      expect(await varrerFollowUps(brt(13, 16, 10))).toBe(0);
+      expect(await varrerFollowUps(brt(16, 16, 10))).toBe(1); // qua + 3 dias úteis = segunda
+      expect((generateBotReply as jest.Mock).mock.calls[2][0].userMessage).toContain("terceiro lembrete");
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(16, 16, 10) });
+      expect(await varrerFollowUps(brt(23, 16, 0))).toBe(0);
+      expect(await varrerFollowUps(brt(23, 16, 10))).toBe(1);
+      const ultimo = (generateBotReply as jest.Mock).mock.calls[3][0].userMessage as string;
+      expect(ultimo).toContain("último lembrete");
+      expect(ultimo).toMatch(/cerca de 7 dias/);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(23, 16, 10) });
+      expect(await varrerFollowUps(brt(30, 16, 10))).toBe(0);
+      expect(SendWhatsAppMessage).toHaveBeenCalledTimes(4);
+    });
+
+    it("caso Claudio: lembrete à mão na quinta 9h20 conta como o 1; o 2 sai sexta 9h20", async () => {
+      const leadQua = new Date(Date.UTC(2026, 10, 11, 23, 43)); // qua 11/11 20h43 BRT
+      (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...doQr, lastClientMessageAt: leadQua }]);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(12, 9, 20) });
+      (Message.findAll as jest.Mock).mockResolvedValue([
+        { fromMe: true, sentBy: "humano", body: "Bom dia, Claudio! Vamos marcar a demonstração?", createdAt: brt(12, 9, 20) },
+        { fromMe: true, sentBy: "ai", body: "Sou a assistente virtual da Valora...", createdAt: new Date(leadQua.getTime() + 20000) },
+        { fromMe: false, body: "Oi, Helio", createdAt: leadQua }
+      ]);
+      expect(await varrerFollowUps(brt(13, 9, 10))).toBe(0);
+      expect(await varrerFollowUps(brt(13, 9, 20))).toBe(1);
+      const instrucao = (generateBotReply as jest.Mock).mock.calls[0][0].userMessage as string;
+      expect(instrucao).toContain("segundo lembrete");
+      expect(instrucao).toContain("escrito à mão por alguém da equipe");
+    });
+
+    it("conversa parada há dias sem nenhum lembrete: não começa a sequência atrasada", async () => {
+      (Ticket.findAll as jest.Mock).mockResolvedValue([{ ...doQr, lastClientMessageAt: brt(5, 17, 9) }]);
+      (Message.findOne as jest.Mock).mockResolvedValue({ fromMe: true, createdAt: brt(5, 17, 9) });
+      expect(await varrerFollowUps(brt(13, 10, 0))).toBe(0);
+      expect(generateBotReply).not.toHaveBeenCalled();
     });
 
     it("lead respondeu no QR: a contagem volta ao 1 pela última mensagem dele", async () => {

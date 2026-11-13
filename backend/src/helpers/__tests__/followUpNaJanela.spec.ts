@@ -1,4 +1,4 @@
-import { alvoDoFollowUp3, ehHorarioComercial, followUpsJaFeitos, proximoFollowUp } from "../followUpNaJanela";
+import { alvoDoFollowUp3, ehHorarioComercial, followUpsJaFeitos, proximoFollowUp, proximoFollowUpQr, somarDiasUteis } from "../followUpNaJanela";
 
 // Horários em Brasília (UTC-3) escritos em UTC. Novembro/2026: 10 = terça, 13 = sexta, 14 = sábado.
 const brt = (dia: number, h: number, m = 0) => new Date(Date.UTC(2026, 10, dia, h + 3, m));
@@ -93,5 +93,51 @@ describe("follow-ups já feitos, lidos nas mensagens (inclusive os escritos à m
 
   it("mensagem sem data (fixture antiga) é ignorada", () => {
     expect(followUpsJaFeitos([{ fromMe: true }, msg(17, 1, "ai")], lead).quantos).toBe(0);
+  });
+});
+
+// Hélio, 13/11/2026 (caso Claudio): no QR não há janela paga — cadência de ~2 semanas.
+describe("cadência longa no QR: 2h, dia útil seguinte, +3 dias úteis, +1 semana", () => {
+  it("dias úteis pulam o fim de semana e mantêm a hora", () => {
+    expect(somarDiasUteis(brt(13, 17), 1)).toEqual(brt(16, 17)); // sexta → segunda
+    expect(somarDiasUteis(brt(11, 16, 5), 3)).toEqual(brt(16, 16, 5)); // quarta → segunda
+  });
+
+  const base = { ultimaDoLead: brt(10, 14), ultimaNossa: brt(10, 14, 1), enviados: 0, ultimoFollowUpEm: null };
+
+  it("1: 2h depois da nossa última mensagem", () => {
+    expect(proximoFollowUpQr(base, brt(10, 15, 59))).toBeNull();
+    expect(proximoFollowUpQr(base, brt(10, 16, 1))).toBe(1);
+  });
+
+  it("1 não sai em conversa parada há mais de 3 dias (nada de lembrete atrasado na subida)", () => {
+    expect(proximoFollowUpQr(base, brt(13, 15))).toBeNull();
+  });
+
+  it("2 no dia útil seguinte, 3 três dias úteis depois, 4 uma semana depois; depois nada", () => {
+    const e1 = { ...base, enviados: 1, ultimoFollowUpEm: brt(10, 16, 5) };
+    expect(proximoFollowUpQr(e1, brt(11, 16))).toBeNull();
+    expect(proximoFollowUpQr(e1, brt(11, 16, 5))).toBe(2);
+    const e2 = { ...base, enviados: 2, ultimoFollowUpEm: brt(11, 16, 5) };
+    expect(proximoFollowUpQr(e2, brt(13, 17))).toBeNull();
+    expect(proximoFollowUpQr(e2, brt(16, 16, 5))).toBe(3);
+    const e3 = { ...base, enviados: 3, ultimoFollowUpEm: brt(16, 16, 5) };
+    expect(proximoFollowUpQr(e3, brt(23, 16))).toBeNull();
+    expect(proximoFollowUpQr(e3, brt(23, 16, 5))).toBe(4);
+    expect(proximoFollowUpQr({ ...e3, enviados: 4 }, brt(30, 10))).toBeNull();
+  });
+
+  it("vencido fora do horário comercial: sai na abertura seguinte", () => {
+    const e1 = { ...base, enviados: 1, ultimoFollowUpEm: brt(13, 17, 55) }; // sexta 17h55 → segunda 17h55
+    expect(proximoFollowUpQr(e1, brt(14, 18))).toBeNull(); // sábado
+    expect(proximoFollowUpQr(e1, brt(16, 17, 55))).toBe(2);
+    const e3 = { ...base, enviados: 3, ultimoFollowUpEm: brt(13, 10) }; // +7 = sexta 20/11 10h
+    expect(proximoFollowUpQr(e3, brt(20, 9, 50))).toBeNull();
+    expect(proximoFollowUpQr(e3, brt(20, 10))).toBe(4);
+  });
+
+  it("silêncio do lead com mais de 21 dias: para", () => {
+    const e3 = { ...base, enviados: 3, ultimoFollowUpEm: brt(25, 10) };
+    expect(proximoFollowUpQr(e3, brt(32 /* 02/12 */, 10))).toBeNull();
   });
 });

@@ -11,9 +11,12 @@ import {
   ESPERA_FOLLOW_UP_1_MS,
   FollowUpsJaFeitos,
   JANELA_MS,
+  HORIZONTE_QR_MS,
   MAX_FOLLOW_UPS,
+  MAX_FOLLOW_UPS_QR,
   followUpsJaFeitos,
-  proximoFollowUp
+  proximoFollowUp,
+  proximoFollowUpQr
 } from "../../helpers/followUpNaJanela";
 import { soRespostaAutomatica } from "../../helpers/respostaAutomatica";
 import { logger } from "../../utils/logger";
@@ -47,8 +50,9 @@ const ETAPAS_SEM_FOLLOW_UP = new Set(["sem_interesse", "transferido"]);
 
 /**
  * Conexão por QR (Baileys), o "funil principal". Pedido do Hélio em 12/11/2026:
- * a Val ligada no card do QR faz os mesmos follow-ups do Oficial. Lá não há
- * janela da Meta, mas a cadência é a mesma (2h, +10h, perto de 24h do lead).
+ * a Val ligada no card do QR também faz follow-up. Lá não há janela paga da
+ * Meta, então a cadência é longa (13/11/2026, caso Claudio): 2h, dia útil
+ * seguinte, +3 dias úteis e +1 semana — ver `proximoFollowUpQr`.
  */
 export const CANAL_QR = "whatsapp";
 
@@ -57,27 +61,46 @@ export function ultimaDoLeadDe(ticket: Pick<Ticket, "channel" | "lastInboundAt" 
   const marca = ticket.channel === CHANNEL ? ticket.lastInboundAt : ticket.lastClientMessageAt;
   return marca ? new Date(marca) : null;
 }
-const TRES_DIAS_S = 3 * 24 * 60 * 60;
+/** A contagem do silêncio vive o bastante para a cadência do QR (cerca de duas semanas). */
+const VALIDADE_DA_CONTAGEM_S = 30 * 24 * 60 * 60;
 
-const TOM_DO_FOLLOW_UP: Record<1 | 2 | 3, string> = {
-  1: "É o primeiro lembrete: retome o ponto exato em que a conversa parou e termine com uma pergunta simples.",
-  2: "É o segundo lembrete: traga um benefício concreto ou uma pergunta diferente da anterior, sem repetir o primeiro lembrete.",
-  3: "É o último lembrete: diga em tom leve que fica à disposição e deixe uma pergunta simples para ele retomar quando quiser."
+export type NumeroDoFollowUp = 1 | 2 | 3 | 4;
+
+const TOM = {
+  primeiro: "É o primeiro lembrete: retome o ponto exato em que a conversa parou e termine com uma pergunta simples.",
+  segundo: "É o segundo lembrete: traga um benefício concreto ou uma pergunta diferente da anterior, sem repetir o primeiro lembrete.",
+  terceiro: "É o terceiro lembrete: traga um benefício concreto ou um exemplo prático que ainda não apareceu na conversa, sem repetir os lembretes anteriores.",
+  ultimo: "É o último lembrete: diga em tom leve que fica à disposição e deixe uma pergunta simples para ele retomar quando quiser."
 };
+
+/** Oficial: 1, 2 e o último (3). QR: 1, 2, 3 e o último (4). */
+export function tomDoFollowUp(numero: NumeroDoFollowUp, qr: boolean): string {
+  if (numero === 1) return TOM.primeiro;
+  if (numero === 2) return TOM.segundo;
+  if (numero === 3) return qr ? TOM.terceiro : TOM.ultimo;
+  return TOM.ultimo;
+}
+
+/** "3 horas", "2 dias". */
+function tempoDeSilencio(horas: number): string {
+  if (horas < 48) return `${horas} hora${horas === 1 ? "" : "s"}`;
+  const dias = Math.round(horas / 24);
+  return `${dias} dias`;
+}
 
 /** A IA leu a conversa e concluiu que não cabe lembrete agora. */
 export const SEM_FOLLOW_UP = /\[\[\s*SEM[_ ]FOLLOW[_ -]?UP\s*\]\]/i;
 
-export function instrucaoDoFollowUp(numero: 1 | 2 | 3, horas: number, feitos?: FollowUpsJaFeitos): string {
+export function instrucaoDoFollowUp(numero: NumeroDoFollowUp, horas: number, feitos?: FollowUpsJaFeitos, qr = false): string {
   const jaFeitos =
     feitos && feitos.quantos > 0
       ? `Desde a última mensagem do lead já saiu${feitos.quantos > 1 ? "ram" : ""} ${feitos.quantos} lembrete${feitos.quantos > 1 ? "s" : ""} nosso${feitos.quantos > 1 ? "s" : ""}${feitos.ultimoPelaEquipe ? ", o último escrito à mão por alguém da equipe" : ""}. Algumas mensagens "suas" no histórico podem ter sido escritas pela equipe: trate-as como suas e não repita o que já foi dito.`
       : 'Algumas mensagens "suas" no histórico podem ter sido escritas à mão pela equipe: trate-as como suas e não repita o que já foi dito.';
   return [
-    `[SISTEMA] O lead não responde à nossa última mensagem há cerca de ${horas} hora${horas === 1 ? "" : "s"}.`,
+    `[SISTEMA] O lead não responde à nossa última mensagem há cerca de ${tempoDeSilencio(horas)}.`,
     jaFeitos,
     "ANTES de escrever, leia a conversa inteira. Se não couber lembrete agora — o lead disse que vai pensar ou que retorna depois, pediu um prazo, recusou, já tem reunião ou demonstração marcada, está negociando valores com a equipe, ou a conversa foi encerrada —, responda APENAS [[SEM_FOLLOW_UP]].",
-    `Se couber, escreva UMA mensagem curta de follow-up (no máximo 2 linhas), natural e educada. ${TOM_DO_FOLLOW_UP[numero]}`,
+    `Se couber, escreva UMA mensagem curta de follow-up (no máximo 2 linhas), natural e educada. ${tomDoFollowUp(numero, qr)}`,
     "Não repita mensagens anteriores, não pressione, não cite nome de ninguém da Valora, não use ferramentas nem marcadores (exceto [[SEM_FOLLOW_UP]]), e não diga que é uma mensagem automática."
   ].join(" ");
 }
@@ -103,12 +126,13 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   if (!ultimaDoLead) return false;
   if (ETAPAS_SEM_FOLLOW_UP.has(String(ticket.salesStage || ""))) return false;
   if (ticket.aiPausedUntil && new Date(ticket.aiPausedUntil) > agora) return false;
-  // Só o Oficial tem janela da Meta; no QR, o limite de 24h vem de `proximoFollowUp`.
+  // Só o Oficial tem janela da Meta; o QR segue a cadência longa de `proximoFollowUpQr`.
   if (oficial && !dentroDaJanela(ticket)) return false;
 
   const chave = `followup:${ticket.id}:${ultimaDoLead.getTime()}`;
   const contagem = await lerContagem(chave);
-  if (contagem.n >= MAX_FOLLOW_UPS) return false;
+  const maximo = oficial ? MAX_FOLLOW_UPS : MAX_FOLLOW_UPS_QR;
+  if (contagem.n >= maximo) return false;
 
   const cfg = await escopoDeVendas(ticket);
   if (!cfg || !cfg.enabled) return false;
@@ -128,13 +152,11 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   // equipe (Hélio, 12/11/2026): a contagem da Val sozinha não sabe deles.
   const feitos = followUpsJaFeitos(conversa as any, ultimaDoLead);
   const enviados = Math.max(contagem.n, feitos.quantos);
-  if (enviados >= MAX_FOLLOW_UPS) return false;
+  if (enviados >= maximo) return false;
   const ultimoFollowUpEm =
     [contagem.em, feitos.ultimoEm].filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0] || null;
-  const numero = proximoFollowUp(
-    { ultimaDoLead, ultimaNossa: new Date(ultima.createdAt), enviados, ultimoFollowUpEm },
-    agora
-  );
+  const estado = { ultimaDoLead, ultimaNossa: new Date(ultima.createdAt), enviados, ultimoFollowUpEm };
+  const numero = oficial ? proximoFollowUp(estado, agora) : proximoFollowUpQr(estado, agora);
   if (!numero) return false;
   const contato = await Contact.findByPk(ticket.contactId);
   if (!contato) return false;
@@ -151,7 +173,7 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
     persona: await promptDeVendas(cfg, ticket.salesSource, ticket.contactId),
     knowledge: "",
     history,
-    userMessage: instrucaoDoFollowUp(numero, horas, feitos),
+    userMessage: instrucaoDoFollowUp(numero, horas, feitos, !oficial),
     contactName: contato.name,
     files: [],
     provedores: await provedoresDaEmpresa(ticket.companyId),
@@ -162,7 +184,7 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   // Leu a conversa e viu que não cabe lembrete: encerra este silêncio sem mandar
   // nada (e sem perguntar de novo ao modelo a cada varredura).
   if (SEM_FOLLOW_UP.test(resposta.text || "")) {
-    await cacheLayer.set(chave, JSON.stringify({ n: MAX_FOLLOW_UPS, em: agora.toISOString() }), "EX", TRES_DIAS_S);
+    await cacheLayer.set(chave, JSON.stringify({ n: maximo, em: agora.toISOString() }), "EX", VALIDADE_DA_CONTAGEM_S);
     logger.info(`[val-follow-up] ticket ${ticket.id}: a IA leu a conversa e decidiu não mandar o follow-up ${numero}`);
     return false;
   }
@@ -172,7 +194,7 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
   if (!whatsapp) return false;
 
   // Marca antes de enviar: duas varreduras nunca mandam o mesmo follow-up duas vezes.
-  await cacheLayer.set(chave, JSON.stringify({ n: numero, em: agora.toISOString() }), "EX", TRES_DIAS_S);
+  await cacheLayer.set(chave, JSON.stringify({ n: numero, em: agora.toISOString() }), "EX", VALIDADE_DA_CONTAGEM_S);
   if (!oficial) {
     // QR: o Baileys grava a mensagem quando ela volta pelo listener, como a resposta da Val.
     await SendWhatsAppMessage({ body: texto, ticket, sentBy: "ai" });
@@ -199,13 +221,13 @@ async function followUpDaConversa(ticket: Ticket, agora: Date): Promise<boolean>
 }
 
 /**
- * Uma varredura: conversas da Val no Oficial (janela aberta) e no QR, com o
- * lead calado há pelo menos 2h e há menos de 24h.
+ * Uma varredura: conversas da Val no Oficial (janela aberta: lead calado há
+ * 2h a 24h) e no QR (lead calado há 2h a 21 dias).
  */
 export async function varrerFollowUps(agora: Date = new Date()): Promise<number> {
-  const entre = {
-    [Op.between]: [new Date(agora.getTime() - JANELA_MS), new Date(agora.getTime() - ESPERA_FOLLOW_UP_1_MS)]
-  };
+  const ate = new Date(agora.getTime() - ESPERA_FOLLOW_UP_1_MS);
+  const entre = { [Op.between]: [new Date(agora.getTime() - JANELA_MS), ate] };
+  const entreNoQr = { [Op.between]: [new Date(agora.getTime() - HORIZONTE_QR_MS), ate] };
   const tickets = await Ticket.findAll({
     where: {
       status: { [Op.in]: ["open", "pending"] },
@@ -215,10 +237,11 @@ export async function varrerFollowUps(agora: Date = new Date()): Promise<number>
       isGroup: false,
       [Op.or]: [
         { channel: CHANNEL, lastInboundAt: entre },
-        { channel: CANAL_QR, lastClientMessageAt: entre }
+        { channel: CANAL_QR, lastClientMessageAt: entreNoQr }
       ]
     } as any,
-    limit: 300
+    order: [["updatedAt", "DESC"]],
+    limit: 500
   });
   let enviados = 0;
   for (const ticket of tickets) {
