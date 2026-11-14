@@ -26,7 +26,7 @@ class AiUsageLog extends Model<AiUsageLog> {
   @Column
   ticketId: number | null;
 
-  /** val_vendas, val_saude, follow_up, atendimento, teste, transcricao. */
+  /** val_vendas, val_saude, val_vale_presente, follow_up, atendimento, teste, transcricao. */
   @Column
   origem: string;
 

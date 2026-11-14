@@ -21,7 +21,10 @@ import {
   promptDaTriagem,
   produtoDaTriagem,
   ETIQUETA_DO_PRODUTO,
-  DESCRICAO_PARA_TRIAGEM
+  DESCRICAO_PARA_TRIAGEM,
+  ehProdutoDeVendas,
+  NOME_DO_BOT_DE_VENDAS,
+  origemDoUso
 } from "../salesAiRules";
 
 describe("parser de código ELO-*", () => {
@@ -392,6 +395,26 @@ describe("triagem da Entrada (11/11/2026)", () => {
     expect(produtoDaTriagem('[[ produto: "Saúde" ]]', [...ambos])).toBe("valora_saude");
     expect(produtoDaTriagem("[[PRODUTO Eventos]]", [...ambos])).toBe("elo_eventos");
   });
+  it("Vale Presente (14/11/2026): marcador lido e só quando oferecido", () => {
+    const tres = ["elo_eventos", "valora_saude", "vale_presente"] as const;
+    expect(produtoDaTriagem("[[PRODUTO vale_presente]]", [...tres])).toBe("vale_presente");
+    expect(produtoDaTriagem('[[PRODUTO="Vale Presente"]]', [...tres])).toBe("vale_presente");
+    expect(produtoDaTriagem("[[PRODUTO vale_presente]]", ["elo_eventos", "valora_saude"])).toBeNull();
+    // "valora" não pode virar Vale Presente por engano.
+    expect(produtoDaTriagem("[[PRODUTO valora]]", [...tres])).toBeNull();
+    const persona = promptDaTriagem([...tres]);
+    expect(persona).toContain("[[PRODUTO vale_presente]]");
+    expect(persona).toContain("Vale Presente — para lojas");
+  });
+  it("Vale Presente é produto de venda, com Val e consumo próprios", () => {
+    expect(ehProdutoDeVendas("vale_presente")).toBe(true);
+    expect(produtoDaConversa("vale_presente")).toBe("vale_presente");
+    expect(NOME_DO_BOT_DE_VENDAS.vale_presente).toBe("Val Vale Presente");
+    expect(origemDoUso("vale_presente")).toBe("val_vale_presente");
+    expect(origemDoUso("valora_saude")).toBe("val_saude");
+    expect(origemDoUso(TRIAGEM)).toBe("val_vendas");
+    expect(ETIQUETA_DO_PRODUTO.vale_presente.nome).toBe("Vale Presente");
+  });
   it("sem marcador, produto desconhecido ou não oferecido → null", () => {
     expect(produtoDaTriagem("Oi! Aqui é a Val, da Valora. O que você procura?", ["elo_eventos", "valora_saude"])).toBeNull();
     expect(produtoDaTriagem("[[PRODUTO valora_pay]]", ["elo_eventos", "valora_saude"])).toBeNull();
@@ -402,7 +425,7 @@ describe("triagem da Entrada (11/11/2026)", () => {
     expect(r.texto).toBe("Perfeito! Me conta da clínica.");
   });
   it("cada produto tem etiqueta e descrição", () => {
-    for (const p of ["elo_eventos", "valora_saude"] as const) {
+    for (const p of ["elo_eventos", "valora_saude", "vale_presente"] as const) {
       expect(ETIQUETA_DO_PRODUTO[p].nome).toBeTruthy();
       expect(DESCRICAO_PARA_TRIAGEM[p]).toBeTruthy();
     }

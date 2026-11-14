@@ -54,7 +54,8 @@ export const ESPERA_PARA_FINALIZAR_MS = 30 * 1000;
 
 const BOT_DO_PRODUTO: Record<ProdutoDeVendas, string> = {
   elo_eventos: "val_vendas",
-  valora_saude: "val_saude"
+  valora_saude: "val_saude",
+  vale_presente: "val_vale_presente"
 };
 
 const normal = (t: string) =>

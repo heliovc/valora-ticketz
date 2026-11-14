@@ -10,7 +10,7 @@ import { notificarValoraPorEmail } from "../TagServices/notificarValora";
 import { avisarNoProprioWhatsapp } from "../WbotServices/AvisoNoProprioWhatsapp";
 
 /**
- * Ferramentas da Val (Val Vendas e Val Saúde): consultar e marcar a
+ * Ferramentas da Val (Val Vendas, Val Saúde e Val Vale Presente): consultar e marcar a
  * demonstração na agenda da Valora. Pedido do Hélio em 09/11/2026: "o robô
  * consegue registrar reuniões na agenda da Valora e me notifica por e-mail e
  * WhatsApp". A agenda mora na Valora (rotas `internal/agenda/demo/*`); o aviso
@@ -50,7 +50,8 @@ export function textoDoAviso(dados: {
 
 const NOME_DO_PRODUTO: Record<ProdutoDeVendas, string> = {
   elo_eventos: "Valora Elo Eventos",
-  valora_saude: "Valora Saúde"
+  valora_saude: "Valora Saúde",
+  vale_presente: "Vale Presente Valora"
 };
 
 /** Mensagem fixa ao lead com os dados da reunião (pedido do Hélio, 11/11/2026). */

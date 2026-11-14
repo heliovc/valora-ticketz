@@ -355,12 +355,13 @@ export function botDeveResponder(
 /**
  * Qual bot uma ação "ligar/desligar o bot" controla. `val_triagem` (11/11/2026)
  * é a Val numa conversa sem produto: ela descobre o que a pessoa procura e
- * segue com a Val Vendas ou a Val Saúde.
+ * segue com a Val do produto. `val_vale_presente` (14/11/2026) vende o Vale
+ * Presente para lojas.
  */
-export type BotDoFunil = "atendimento" | "val_vendas" | "val_saude" | "val_triagem";
+export type BotDoFunil = "atendimento" | "val_vendas" | "val_saude" | "val_vale_presente" | "val_triagem";
 
 /** Bots que só existem na empresa com a Val Vendas configurada. */
-export const BOTS_DA_VAL: BotDoFunil[] = ["val_vendas", "val_saude", "val_triagem"];
+export const BOTS_DA_VAL: BotDoFunil[] = ["val_vendas", "val_saude", "val_vale_presente", "val_triagem"];
 
 /**
  * Ações gravadas antes da escolha (28/10/2026) não têm `config.bot`: elas
@@ -371,8 +372,9 @@ export function botDaAcao(config: Record<string, unknown> | null | undefined): B
 }
 
 /** Produto que o bot vende. Nulo = bot de atendimento, que não vende produto nenhum. */
-export function produtoDoBot(bot: BotDoFunil): "elo_eventos" | "valora_saude" | null {
+export function produtoDoBot(bot: BotDoFunil): "elo_eventos" | "valora_saude" | "vale_presente" | null {
   if (bot === "val_vendas") return "elo_eventos";
+  if (bot === "val_vale_presente") return "vale_presente";
   return bot === "val_saude" ? "valora_saude" : null;
 }
 

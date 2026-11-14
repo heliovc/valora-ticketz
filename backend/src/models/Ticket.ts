@@ -115,7 +115,7 @@ class Ticket extends Model<Ticket> {
   referralCtwaClid: string | null;
 
   // --- Val Vendas (IA comercial do Elo Eventos) -----------------------------
-  /** Produto que a IA comercial vende nesta conversa: `elo_eventos` ou `valora_saude`. */
+  /** Produto que a IA comercial vende nesta conversa: `elo_eventos`, `valora_saude` ou `vale_presente` (`triagem` = ainda descobrindo). */
   @Column(DataType.STRING)
   salesSource: string | null;
 

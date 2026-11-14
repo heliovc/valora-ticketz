@@ -420,7 +420,9 @@ describe("bot da Val Saúde na automação", () => {
   it("cada bot de vendas aponta o seu produto", () => {
     expect(produtoDoBot("val_saude")).toBe("valora_saude");
     expect(produtoDoBot("val_vendas")).toBe("elo_eventos");
+    expect(produtoDoBot("val_vale_presente")).toBe("vale_presente");
     expect(produtoDoBot("atendimento")).toBeNull();
+    expect(botDaAcao({ bot: "val_vale_presente" })).toBe("val_vale_presente");
   });
 });
 

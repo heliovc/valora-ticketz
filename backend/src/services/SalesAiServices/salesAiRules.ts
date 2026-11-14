@@ -24,14 +24,15 @@ export type ViaDeOrigem = "codigo" | "formulario" | "lista" | "anuncio" | "manua
  * qual vale numa conversa é `Tickets.salesSource`, e cada produto tem a própria
  * playbook. Regras, pausa e limites são os mesmos para todos.
  */
-export const PRODUTOS_DE_VENDAS = ["elo_eventos", "valora_saude"] as const;
+export const PRODUTOS_DE_VENDAS = ["elo_eventos", "valora_saude", "vale_presente"] as const;
 export type ProdutoDeVendas = (typeof PRODUTOS_DE_VENDAS)[number];
 
 export const PRODUTO_PADRAO: ProdutoDeVendas = "elo_eventos";
 
 export const NOME_DO_BOT_DE_VENDAS: Record<ProdutoDeVendas, string> = {
   elo_eventos: "Val Vendas",
-  valora_saude: "Val Saúde"
+  valora_saude: "Val Saúde",
+  vale_presente: "Val Vale Presente"
 };
 
 export function ehProdutoDeVendas(valor: unknown): valor is ProdutoDeVendas {
@@ -52,13 +53,16 @@ export const DESCRICAO_PARA_TRIAGEM: Record<ProdutoDeVendas, string> = {
   elo_eventos:
     "Valora Elo Eventos — para casas de festas, buffets e espaços de eventos: uma IA atende o WhatsApp em segundos, consulta a agenda, manda a proposta com os pacotes e cobra o sinal por Pix.",
   valora_saude:
-    "Valora Saúde — para clínicas e médicos: o paciente paga por um link único, em até 21x no cartão, e o valor já cai dividido entre cirurgião, anestesista, instrumentador e clínica."
+    "Valora Saúde — para clínicas e médicos: o paciente paga por um link único, em até 21x no cartão, e o valor já cai dividido entre cirurgião, anestesista, instrumentador e clínica.",
+  vale_presente:
+    "Vale Presente — para lojas (moda, acessórios, joias, presentes): a loja vende vale presente pelo Pix, o dinheiro entra na hora e quem ganha o vale vem à loja usar, muitas vezes como cliente novo."
 };
 
 /** Etiqueta que o card ganha quando a triagem descobre o produto (o card fica na Entrada). */
 export const ETIQUETA_DO_PRODUTO: Record<ProdutoDeVendas, { nome: string; cor: string }> = {
   elo_eventos: { nome: "Eventos", cor: "#22c55e" },
-  valora_saude: { nome: "Valora Saude", cor: "#0E9F6E" }
+  valora_saude: { nome: "Valora Saude", cor: "#0E9F6E" },
+  vale_presente: { nome: "Vale Presente", cor: "#B4184E" }
 };
 
 /** Persona da triagem: só descobrir o produto, entre os que têm playbook ativa. */
@@ -74,7 +78,7 @@ export function promptDaTriagem(produtos: ProdutoDeVendas[], protocolo = ""): st
     "Seu único objetivo agora é descobrir qual dessas soluções interessa à pessoa:",
     `1. Se a conversa já deixa claro (pelo assunto, pelo tipo de negócio dela ou por citar o produto), responda SOMENTE com ${marcadores}, sem nenhum outro texto. A resposta ao cliente sai depois, com o roteiro do produto.`,
     "2. Se ainda não está claro, cumprimente em uma frase curta, apresente-se como Val, da Valora, e pergunte qual é o negócio dela ou o que procura, citando as soluções acima em poucas palavras. Uma pergunta só. Não detalhe os produtos e não fale de preço.",
-    "3. Se a pessoa procura outra coisa (maquininha de cartão, Valora Pay, pagamentos ou repasses de empresa, loja ou vitrine digital, suporte de quem já é cliente, fornecedor, currículo ou qualquer assunto fora das soluções acima), agradeça em uma frase, diga que vai passar para a equipe da Valora e escreva [[TRANSFERIR]].",
+    "3. Se a pessoa procura outra coisa (maquininha de cartão, Valora Pay, pagamentos ou repasses de empresa, loja virtual ou vitrine digital, suporte de quem já é cliente, fornecedor, currículo ou qualquer assunto fora das soluções acima), agradeça em uma frase, diga que vai passar para a equipe da Valora e escreva [[TRANSFERIR]].",
     "Nunca invente produto, preço ou prazo.",
     protocolo.trim()
   ]
@@ -90,13 +94,21 @@ export function produtoDaTriagem(texto: string, oferecidos: ProdutoDeVendas[]): 
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
-  const produto: ProdutoDeVendas | null = /saude/.test(valor) ? "valora_saude" : /evento/.test(valor) ? "elo_eventos" : null;
+  const produto: ProdutoDeVendas | null = /saude/.test(valor)
+    ? "valora_saude"
+    : /evento/.test(valor)
+      ? "elo_eventos"
+      : /presente/.test(valor)
+        ? "vale_presente"
+        : null;
   return produto && oferecidos.includes(produto) ? produto : null;
 }
 
 /** Na tela de consumo das IAs: qual Val gastou. */
-export function origemDoUso(salesSource: string | null | undefined): "val_saude" | "val_vendas" {
-  return produtoDaConversa(salesSource) === "valora_saude" ? "val_saude" : "val_vendas";
+export function origemDoUso(salesSource: string | null | undefined): "val_saude" | "val_vendas" | "val_vale_presente" {
+  const produto = produtoDaConversa(salesSource);
+  if (produto === "valora_saude") return "val_saude";
+  return produto === "vale_presente" ? "val_vale_presente" : "val_vendas";
 }
 
 /** Conversa sem origem conhecida usa o produto padrão, como antes de existirem dois. */
@@ -454,7 +466,7 @@ export interface IndicacaoDoLead {
   proprio?: boolean;
 }
 
-/** Regra do sistema que vai junto da playbook: vale para Val Vendas e Val Saúde. */
+/** Regra do sistema que vai junto da playbook: vale para todas as Vals de venda. */
 export const PROTOCOLO_DA_INDICACAO = [
   "Indicação de outra pessoa (regra do sistema, vale acima da playbook):",
   '- Se o lead disser que quem cuida do assunto é outra pessoa e passar o telefone dela (no texto ou num contato compartilhado, que aparece como "👤 Contato: …"), NÃO transfira. Agradeça em uma frase curta, diga que vamos falar com essa pessoa e escreva [[INDICACAO nome="nome da pessoa indicada" numero="DDD e número"]]. Nessa resposta não escreva [[TRANSFERIR]].',
