@@ -29,6 +29,16 @@ cloudApiRoutes.post(
   CloudApiController.check
 );
 
+// Mais de um número oficial na mesma conta (14/11/2026).
+cloudApiRoutes.get("/meta/connection/numeros", isAuth, isAdmin, CloudApiController.numeros);
+cloudApiRoutes.post("/meta/connection/numeros", isAuth, isAdmin, CloudApiController.adicionar);
+cloudApiRoutes.post(
+  "/meta/connection/numeros/:phoneNumberId/confirmar",
+  isAuth,
+  isAdmin,
+  CloudApiController.confirmar
+);
+
 // Modelos de mensagem: ver é de todos (o atendente escolhe um para responder
 // fora das 24h); criar e apagar é de administrador, porque mexe na conta da
 // Meta.

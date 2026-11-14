@@ -10,6 +10,11 @@ import {
   revalidar,
   salvarConexao
 } from "../services/CloudApiServices/CloudApiConnectionService";
+import {
+  adicionarNumero,
+  confirmarNumero,
+  numerosDaConta
+} from "../services/CloudApiServices/CloudApiNumerosService";
 
 /**
  * WhatsApp Oficial (Meta Cloud API) — webhook público e cadastro da conexão.
@@ -101,4 +106,30 @@ export const check = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json(saude);
 };
 
-export default { verify, receive, show, store, check };
+/** Números da conta na Meta, com a qualidade de cada um e a conexão do CRM. */
+export const numeros = async (req: Request, res: Response): Promise<Response> => {
+  const { companyId } = req.user;
+  return res.status(200).json(await numerosDaConta(companyId));
+};
+
+/** Mais um número oficial: cadastra na Meta e pede o código por SMS. */
+export const adicionar = async (req: Request, res: Response): Promise<Response> => {
+  const { companyId } = req.user;
+  const { numero, nomeDeExibicao } = req.body || {};
+  return res.status(200).json(await adicionarNumero(companyId, { numero, nomeDeExibicao }));
+};
+
+/** Confere o código, registra o número na Cloud API e cria a conexão com quadro próprio. */
+export const confirmar = async (req: Request, res: Response): Promise<Response> => {
+  const { companyId } = req.user;
+  const { codigo, nome, ownBoard } = req.body || {};
+  return res.status(200).json(
+    await confirmarNumero(companyId, req.params.phoneNumberId, {
+      codigo,
+      nome,
+      ownBoard: typeof ownBoard === "boolean" ? ownBoard : undefined
+    })
+  );
+};
+
+export default { verify, receive, show, store, check, numeros, adicionar, confirmar };
