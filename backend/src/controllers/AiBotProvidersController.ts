@@ -5,6 +5,7 @@ import {
   salvarProvedores,
   testarProvedor
 } from "../services/AiBotServices/AiBotProvidersService";
+import { gerarTexto } from "../services/AiBotServices/GerarTextoService";
 
 /** Modelos de IA do bot da empresa do token. Nunca devolve chave. */
 export const index = async (req: Request, res: Response): Promise<Response> =>
@@ -24,3 +25,10 @@ export const fields = async (req: Request, res: Response): Promise<Response> =>
 
 export const updateFields = async (req: Request, res: Response): Promise<Response> =>
   res.json(await salvarCamposDoBot(req.user.companyId, req.body?.campos));
+
+/**
+ * Texto gerado com os modelos da empresa (ou os da Valora). A Valora usa para
+ * montar a configuração do bot a partir do negócio do cliente.
+ */
+export const gerar = async (req: Request, res: Response): Promise<Response> =>
+  res.json(await gerarTexto(req.user.companyId, { sistema: req.body?.sistema, mensagem: req.body?.mensagem }));

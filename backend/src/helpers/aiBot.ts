@@ -72,6 +72,13 @@ const MAX_TOKENS = Number(process.env.AI_BOT_MAX_TOKENS || 600);
  * A resposta continua curta; o teto só dá espaço para o raciocínio.
  */
 const MAX_TOKENS_COM_RACIOCINIO = Number(process.env.AI_BOT_MAX_TOKENS_RACIOCINIO || 2500);
+/**
+ * Ajustes de uma chamada fora da conversa (ex.: montar a configuração do bot a
+ * partir do negócio do cliente): resposta longa e mais tempo. Sem opções, vale
+ * o teto curto da conversa.
+ */
+export type OpcoesDaChamada = { maxTokens?: number; timeoutMs?: number };
+
 /** Modelos que já recusaram os ajustes neste processo: vão direto sem eles (poupa o 400). */
 const recusamAjustes = new Set<string>();
 /** Só para os testes. */
@@ -416,13 +423,14 @@ async function callAnthropic(
   turns: BotTurn[],
   apiKey: string,
   model: string,
-  medidor?: Medidor
+  medidor?: Medidor,
+  opcoes?: OpcoesDaChamada
 ): Promise<string> {
   const anthropic = getClient(apiKey);
 
   const response = await anthropic.messages.create({
     model: model || ANTHROPIC_MODEL,
-    max_tokens: MAX_TOKENS,
+    max_tokens: opcoes?.maxTokens ?? MAX_TOKENS,
     // Prefixo estável (persona + base) cacheado para baratear conversas.
     system: [
       {
@@ -437,7 +445,7 @@ async function callAnthropic(
         content: turn.text
       })
     )
-  });
+  }, opcoes?.timeoutMs ? { timeout: opcoes.timeoutMs } : undefined);
 
   medidor?.somar(lerUso("anthropic", response, model || ANTHROPIC_MODEL));
 
@@ -456,7 +464,8 @@ async function callAnthropic(
 async function postComRetentativa(
   corpo: unknown,
   apiKey: string,
-  model: string
+  model: string,
+  timeoutMs: number = GEMINI_TIMEOUT_MS
 ): Promise<any> {
   const url = `${GEMINI_API_BASE}/models/${model || GEMINI_MODEL}:generateContent`;
   let ultimoErro: unknown;
@@ -465,7 +474,7 @@ async function postComRetentativa(
     try {
       const { data } = await axios.post(url, corpo, {
         headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
-        timeout: GEMINI_TIMEOUT_MS
+        timeout: timeoutMs
       });
       return data;
     } catch (err) {
@@ -498,10 +507,11 @@ async function callGemini(
   turns: BotTurn[],
   apiKey: string,
   model: string,
-  medidor?: Medidor
+  medidor?: Medidor,
+  opcoes?: OpcoesDaChamada
 ): Promise<string> {
   const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: MAX_TOKENS,
+    maxOutputTokens: opcoes?.maxTokens ?? MAX_TOKENS,
     temperature: 0.4
   };
   if (GEMINI_THINKING && GEMINI_THINKING !== "off") {
@@ -520,7 +530,7 @@ async function callGemini(
     generationConfig
   };
 
-  const data = await postComRetentativa(corpo, apiKey, model);
+  const data = await postComRetentativa(corpo, apiKey, model, opcoes?.timeoutMs);
   medidor?.somar(lerUso("gemini", data, model));
 
   // Resposta barrada por filtro de conteúdo não traz candidato: vira handoff
@@ -578,7 +588,8 @@ async function callCompativelOpenAI(
   turns: BotTurn[],
   apiKey: string,
   model: string,
-  medidor?: Medidor
+  medidor?: Medidor,
+  opcoes?: OpcoesDaChamada
 ): Promise<string> {
   const extras: Record<string, string> =
     qual === "openrouter" ? { "HTTP-Referer": "https://valorasolucoes.com", "X-Title": "Valora Elo" } : {};
@@ -588,7 +599,7 @@ async function callCompativelOpenAI(
   // próximo da lista assumir.
   for (let tentativa = 1; ; tentativa += 1) {
     // eslint-disable-next-line no-await-in-loop
-    const texto = await chamarCompativelUmaVez(qual, systemText, turns, apiKey, model, extras, medidor);
+    const texto = await chamarCompativelUmaVez(qual, systemText, turns, apiKey, model, extras, medidor, opcoes);
     if (texto.texto) return texto.texto;
     if (tentativa >= 2) throw new Error(`resposta vazia de ${qual}: ${texto.corpo}`);
     logger.warn({ provider: qual, corpo: texto.corpo }, "[aiBot] resposta vazia; tentando de novo");
@@ -602,7 +613,8 @@ async function chamarCompativelUmaVez(
   apiKey: string,
   model: string,
   extras: Record<string, string>,
-  medidor?: Medidor
+  medidor?: Medidor,
+  opcoes?: OpcoesDaChamada
 ): Promise<{ texto: string; corpo: string }> {
   const messages = [
     { role: "system", content: systemText },
@@ -620,17 +632,17 @@ async function chamarCompativelUmaVez(
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...extras },
       // O gratuito do OpenRouter leva de 14 a 65 s por resposta (medido em 27/10):
       // com os 15 s do Gemini ele caía sempre por tempo.
-      timeout: qual === "openrouter" ? OPENROUTER_TIMEOUT_MS : GEMINI_TIMEOUT_MS
+      timeout: opcoes?.timeoutMs ?? (qual === "openrouter" ? OPENROUTER_TIMEOUT_MS : GEMINI_TIMEOUT_MS)
     });
   const base = {
     model: model || MODELO_PADRAO[qual],
-    max_tokens: MAX_TOKENS,
+    max_tokens: opcoes?.maxTokens ?? MAX_TOKENS,
     messages,
     // OpenRouter devolve o custo em dólares no `usage` (tela de consumo).
     ...(qual === "openrouter" ? { usage: { include: true } } : {})
   };
   // Sem os ajustes o modelo raciocina: o teto precisa caber o raciocínio e a resposta.
-  const semAjustes = { ...base, max_tokens: Math.max(MAX_TOKENS, MAX_TOKENS_COM_RACIOCINIO) };
+  const semAjustes = { ...base, max_tokens: Math.max(base.max_tokens, MAX_TOKENS_COM_RACIOCINIO) };
   const chave = `${qual}:${base.model}`;
   let data: any;
   if (recusamAjustes.has(chave)) {
@@ -679,16 +691,17 @@ export async function chamarProvedor(
   provedor: ProvedorDoBot,
   systemText: string,
   turns: BotTurn[],
-  medidor?: Medidor
+  medidor?: Medidor,
+  opcoes?: OpcoesDaChamada
 ): Promise<string> {
   const model = provedor.model || MODELO_PADRAO[provedor.provider];
   if (provedor.provider === "gemini") {
-    return limparMarcacoesDoModelo(await callGemini(systemText, turns, provedor.apiKey, model, medidor));
+    return limparMarcacoesDoModelo(await callGemini(systemText, turns, provedor.apiKey, model, medidor, opcoes));
   }
   if (provedor.provider === "groq" || provedor.provider === "openrouter") {
-    return callCompativelOpenAI(provedor.provider, systemText, turns, provedor.apiKey, model, medidor);
+    return callCompativelOpenAI(provedor.provider, systemText, turns, provedor.apiKey, model, medidor, opcoes);
   }
-  return limparMarcacoesDoModelo(await callAnthropic(systemText, turns, provedor.apiKey, model, medidor));
+  return limparMarcacoesDoModelo(await callAnthropic(systemText, turns, provedor.apiKey, model, medidor, opcoes));
 }
 
 /**

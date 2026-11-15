@@ -18,4 +18,7 @@ aiBotProvidersRoutes.post(
 aiBotProvidersRoutes.get("/ai-bot/fields", isAuth, isAdmin, AiBotProvidersController.fields);
 aiBotProvidersRoutes.put("/ai-bot/fields", isAuth, isAdmin, AiBotProvidersController.updateFields);
 
+// Montar o bot a partir do negócio do cliente (resposta longa, teto diário).
+aiBotProvidersRoutes.post("/ai-bot/gerar", isAuth, isAdmin, AiBotProvidersController.gerar);
+
 export default aiBotProvidersRoutes;
