@@ -652,9 +652,26 @@ async function chamarCompativelUmaVez(
     }
   }
   medidor?.somar(lerUso(qual, data, model));
-  // Modelos de raciocínio às vezes devolvem o pensamento entre <think>…</think>: nunca vai ao cliente.
-  const texto = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const texto = limparMarcacoesDoModelo(String(data?.choices?.[0]?.message?.content || ""));
   return { texto, corpo: texto ? "" : JSON.stringify(data || "").slice(0, 300) };
+}
+
+// Marcações internas que o modelo às vezes ecoa no texto e que nunca vão ao
+// cliente: o pensamento entre <think>…</think> e, na demo do Eventos em
+// 16/11/2026, "<reasoning_effort>1</reasoning_effort>" duas vezes no fim da
+// resposta do Claude Haiku pelo OpenRouter.
+const MARCACOES_INTERNAS =
+  "think|thinking|antthinking|reasoning|reasoning_effort|thinking_effort|max_thinking_length|thinking_mode|effort";
+const BLOCO_INTERNO = new RegExp(`<(${MARCACOES_INTERNAS})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`, "gi");
+const MARCACAO_SOLTA = new RegExp(`<\\/?(?:${MARCACOES_INTERNAS})\\b[^>]*>`, "gi");
+
+export function limparMarcacoesDoModelo(texto: string): string {
+  return texto
+    .replace(BLOCO_INTERNO, "")
+    .replace(MARCACAO_SOLTA, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** Uma chamada ao provedor indicado. Erro sobe — quem chama passa ao próximo. */
@@ -665,11 +682,13 @@ export async function chamarProvedor(
   medidor?: Medidor
 ): Promise<string> {
   const model = provedor.model || MODELO_PADRAO[provedor.provider];
-  if (provedor.provider === "gemini") return callGemini(systemText, turns, provedor.apiKey, model, medidor);
+  if (provedor.provider === "gemini") {
+    return limparMarcacoesDoModelo(await callGemini(systemText, turns, provedor.apiKey, model, medidor));
+  }
   if (provedor.provider === "groq" || provedor.provider === "openrouter") {
     return callCompativelOpenAI(provedor.provider, systemText, turns, provedor.apiKey, model, medidor);
   }
-  return callAnthropic(systemText, turns, provedor.apiKey, model, medidor);
+  return limparMarcacoesDoModelo(await callAnthropic(systemText, turns, provedor.apiKey, model, medidor));
 }
 
 /**
